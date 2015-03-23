@@ -34,6 +34,7 @@ main (int argc, char *argv [])
 
     zsync_test (verbose); 
     zsync_node_test (verbose); 
+    zsync_peer_test (verbose); 
 
     printf ("Tests passed OK\n");
     return 0;

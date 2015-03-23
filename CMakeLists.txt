@@ -11,14 +11,14 @@ project(libzsync)
 enable_language(C)
 enable_testing()
 
-set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-set(BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
+set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 
 ########################################################################
 # determine version
 ########################################################################
 foreach(which MAJOR MINOR PATCH)
-    file(STRINGS "${SOURCE_DIR}/include/libzsync.h" LIBZSYNC_VERSION_STRING REGEX "#define LIBZSYNC_VERSION_${which}")
+    file(STRINGS "${SOURCE_DIR}/include/libzsync_library.h" LIBZSYNC_VERSION_STRING REGEX "#define LIBZSYNC_VERSION_${which}")
     string(REGEX MATCH "#define LIBZSYNC_VERSION_${which} ([0-9_]+)" LIBZSYNC_REGEX_MATCH "${LIBZSYNC_VERSION_STRING}")
     if (NOT LIBZSYNC_REGEX_MATCH)
         message(FATAL_ERROR "failed to parse LIBZSYNC_VERSION_${which} from libzsync.h")
@@ -45,7 +45,7 @@ if (NOT HAVE_NET_IF_H)
     CHECK_INCLUDE_FILE("net/if.h" HAVE_NET_IF_H)
 endif()
 
-file(WRITE ${BINARY_DIR}/platform.h.in "
+file(WRITE "${BINARY_DIR}/platform.h.in" "
 #cmakedefine HAVE_LINUX_WIRELESS_H
 #cmakedefine HAVE_NET_IF_H
 #cmakedefine HAVE_NET_IF_MEDIA_H
@@ -53,13 +53,13 @@ file(WRITE ${BINARY_DIR}/platform.h.in "
 #cmakedefine HAVE_FREEIFADDRS
 ")
 
-configure_file(${BINARY_DIR}/platform.h.in ${BINARY_DIR}/platform.h)
+configure_file("${BINARY_DIR}/platform.h.in" "${BINARY_DIR}/platform.h")
 
 #The MSVC C compiler is too out of date,
 #so the sources have to be compiled as c++
 if (MSVC)
     enable_language(CXX)
-    file(GLOB sources ${SOURCE_DIR}/src/*.c)
+    file(GLOB sources "${SOURCE_DIR}/src/*.c")
     set_source_files_properties(${sources} PROPERTIES LANGUAGE CXX)
     set(MORE_LIBRARIES ws2_32 Rpcrt4 Iphlpapi)
 endif()
@@ -69,11 +69,33 @@ if (MINGW)
     set(MORE_LIBRARIES -lws2_32 -lrpcrt4 -liphlpapi)
 endif()
 
+# required libraries for cygwin
+if (CYGWIN)
+    set(MORE_LIBRARIES -luuid)
+endif()
+
+list(APPEND CMAKE_MODULE_PATH "${SOURCE_DIR}")
+
 ########################################################################
-# ZeroMQ depedency
+# ZMQ dependency
 ########################################################################
-list(APPEND CMAKE_MODULE_PATH ${SOURCE_DIR})
 find_package(ZeroMQ REQUIRED)
+include_directories(${ZEROMQ_INCLUDE_DIRS})
+list(APPEND MORE_LIBRARIES ${ZEROMQ_LIBRARIES})
+
+########################################################################
+# CZMQ dependency
+########################################################################
+find_package(CZMQ REQUIRED)
+include_directories(${CZMQ_INCLUDE_DIRS})
+list(APPEND MORE_LIBRARIES ${CZMQ_LIBRARIES})
+
+########################################################################
+# ZYRE dependency
+########################################################################
+find_package(Zyre REQUIRED)
+include_directories(${ZYRE_INCLUDE_DIRS})
+list(APPEND MORE_LIBRARIES ${ZYRE_LIBRARIES})
 
 ########################################################################
 # includes
@@ -83,6 +105,7 @@ set (libzsync_headers
     include/libzsync.h
     include/zsync.h
     src/zsync_node.h
+    src/zsync_peer.h
 )
 source_group ("Header Files" FILES ${libzsync_headers})
 install(FILES ${libzsync_headers} DESTINATION include)
@@ -90,21 +113,23 @@ install(FILES ${libzsync_headers} DESTINATION include)
 ########################################################################
 # library
 ########################################################################
-include_directories(${BINARY_DIR})
-include_directories(${SOURCE_DIR}/include)
-include_directories(${ZEROMQ_INCLUDE_DIRS})
+include_directories("${BINARY_DIR}" "${SOURCE_DIR}/include")
 set (libzsync_sources
     src/zsync.c
     src/zsync_node.c
+    src/zsync_peer.c
 )
 source_group ("Source Files" FILES ${libzsync_sources})
-add_library(libzsync SHARED ${libzsync_sources})
+if (NOT DEFINED BUILD_SHARED_LIBS)
+    SET(BUILD_SHARED_LIBS ON)
+endif()
+add_library(libzsync ${libzsync_sources})
 set_target_properties(libzsync PROPERTIES DEFINE_SYMBOL "LIBLIBZSYNC_EXPORTS")
 target_link_libraries(libzsync ${ZEROMQ_LIBRARIES} ${MORE_LIBRARIES})
 
 install(TARGETS libzsync
-    LIBRARY DESTINATION lib${LIB_SUFFIX} # .so file
-    ARCHIVE DESTINATION lib${LIB_SUFFIX} # .lib file
+    LIBRARY DESTINATION "lib${LIB_SUFFIX}" # .so file
+    ARCHIVE DESTINATION "lib${LIB_SUFFIX}" # .lib file
     RUNTIME DESTINATION bin              # .dll file
 )
 
@@ -117,19 +142,19 @@ set(exec_prefix "\${prefix}")
 set(libdir "\${prefix}/lib${LIB_SUFFIX}")
 set(includedir "\${prefix}/include")
 configure_file(
-    ${SOURCE_DIR}/src/liblibzsync.pc.in
-    ${BINARY_DIR}/liblibzsync.pc
+    "${SOURCE_DIR}/src/liblibzsync.pc.in"
+    "${BINARY_DIR}/liblibzsync.pc"
 @ONLY)
 
 install(
-    FILES ${BINARY_DIR}/liblibzsync.pc
-    DESTINATION lib${LIB_SUFFIX}/pkgconfig
+    FILES "${BINARY_DIR}/liblibzsync.pc"
+    DESTINATION "lib${LIB_SUFFIX}/pkgconfig"
 )
 
 ########################################################################
 # tests
 ########################################################################
-add_executable(libzsync_selftest ${SOURCE_DIR}/src/libzsync_selftest.c)
+add_executable(libzsync_selftest "${SOURCE_DIR}/src/libzsync_selftest.c")
 target_link_libraries(libzsync_selftest libzsync ${ZEROMQ_LIBRARIES})
 add_test(libzsync_selftest libzsync_selftest)
 

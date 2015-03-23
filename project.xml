@@ -59,6 +59,7 @@
     -->
     <class name = "zsync">Public API</class>
     <class name = "zsync_node" private = "1">Internal communication HUB</class>
+    <class name = "zsync_peer" private = "1">Internal peer representation</class>
 
     <!--
         Main programs built by the project

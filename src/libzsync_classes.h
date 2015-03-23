@@ -15,14 +15,14 @@
     =========================================================================
 */
 
-#ifndef __LIBZSYNC_CLASSES_H_INCLUDED__
-#define __LIBZSYNC_CLASSES_H_INCLUDED__
+#ifndef LIBZSYNC_CLASSES_H_INCLUDED
+#define LIBZSYNC_CLASSES_H_INCLUDED
 
 //  External API
 #include "../include/libzsync.h"
 
 //  Internal API
 #include "zsync_node.h"
-#include "zsync_msg.h"
+#include "zsync_peer.h"
 
 #endif

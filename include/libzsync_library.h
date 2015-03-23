@@ -16,8 +16,10 @@
     =========================================================================
 */
 
-#ifndef __libzsync_library_H_INCLUDED__
-#define __libzsync_library_H_INCLUDED__
+#ifndef libzsync_library_H_INCLUDED
+#define libzsync_library_H_INCLUDED
+
+//  Set up environment for the application
 
 //  External dependencies
 #include <zyre.h>

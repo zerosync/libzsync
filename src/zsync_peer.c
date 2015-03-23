@@ -1,5 +1,5 @@
 /*  =========================================================================
-    zsync - Public API
+    zsync_peer - Internal peer representation
 
     Copyright (c) the Contributors as noted in the AUTHORS file.         
     This file is part of libzsync, the peer to peer file sharing library:
@@ -13,7 +13,7 @@
 
 /*
 @header
-    zsync - Public API
+    zsync_peer - Internal peer representation
 @discuss
 @end
 */
@@ -23,40 +23,40 @@
 
 //  Structure of our class
 
-struct _zsync_t {
-   zactor_t *actor;           // A zsync instance wraps the actor instance
+struct _zsync_peer_t {
+    char *uuid;
+    uint64_t state;
 };
 
 
 //  --------------------------------------------------------------------------
-//  Create a new zsync
+//  Create a new zsync_peer.
 
-zsync_t *
-zsync_new ()
+zsync_peer_t *
+zsync_peer_new (char *uuid, uint64_t state)
 {
-    zsync_t *self = (zsync_t *) zmalloc (sizeof (zsync_t));
+    zsync_peer_t *self = (zsync_peer_t *) zmalloc (sizeof (zsync_peer_t));
     assert (self);
 
-    //  Start node engine and wait for it to be ready
-    self->actor = zactor_new (zsync_node_actor, NULL);
-    assert (self->actor);
+    self->uuid = (char *) zmalloc (sizeof (char) * 32 + 1);
+    strcpy (self->uuid, uuid);
+    self->state = state;
 
     return self;
 }
 
-
 //  --------------------------------------------------------------------------
-//  Destroy the zsync
+//  Destroy the zsync_peer.
 
 void
-zsync_destroy (zsync_t **self_p)
+zsync_peer_destroy (zsync_peer_t **self_p)
 {
     assert (self_p);
     if (*self_p) {
-        zsync_t *self = *self_p;
+        zsync_peer_t *self = *self_p;
 
         //  Free class properties
-        zactor_destroy (&self->actor);
+        free (self->uuid);
 
         //  Free object itself
         free (self);
@@ -66,61 +66,50 @@ zsync_destroy (zsync_t **self_p)
 
 
 //  --------------------------------------------------------------------------
-//  Start the zsync node. Wait until node is started!
+//  Get the UUID of this peer
 
-int
-zsync_start (zsync_t *self)
-{
-    assert (self);
-    zstr_sendx (self->actor, "START", NULL);
-    return zsock_wait (self->actor) == 0? 0: -1;;
-}
-
-
-//  --------------------------------------------------------------------------
-//  Stop the zsync node. Wait until node is stopped!
-
-void
-zsync_stop (zsync_t *self)
+char *
+zsync_peer_uuid (zsync_peer_t *self)
 {
    assert (self);
-   zstr_sendx (self->actor, "STOP", NULL);
-   zsock_wait (self->actor);
+   return self->uuid;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Get the state of this peer
+
+uint64_t
+zsync_peer_state (zsync_peer_t *self)
+{
+   assert (self);
+   return self->state;
 }
 
 //  --------------------------------------------------------------------------
-//  Print properties of object
+//  Print properties of the zsync_peer object.
 
 void
-zsync_print (zsync_t *self)
+zsync_peer_print (zsync_peer_t *self)
 {
     assert (self);
 }
 
 
 //  --------------------------------------------------------------------------
-//  Selftest
+//  Self test of this class.
 
-int
-zsync_test (bool verbose)
+void
+zsync_peer_test (bool verbose)
 {
-    printf (" * zsync: ");
+    printf (" * zsync_peer: ");
 
     //  @selftest
     //  Simple create/destroy test
-    zsync_t *self1 = zsync_new ();
-    zsync_t *self2 = zsync_new ();
-    assert (self1);
-    assert (self2);
-    zsync_start (self1);
-    zsync_start (self2);
-    zclock_sleep (10000);
-    zsync_stop (self1);
-    zsync_stop (self2);
-    zsync_destroy (&self1);
-    zsync_destroy (&self2);
+    zsync_peer_t *self = zsync_peer_new ("123456", 0);
+    assert (self);
+    zsync_peer_destroy (&self);
     //  @end
 
     printf ("OK\n");
-    return 0;
 }

@@ -40,7 +40,7 @@ AC_SUBST(PACKAGE_VERSION)
 # http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
 #
 # liblibzsync -version-info
-LTVER="2:0:1"
+LTVER="1:0:0"
 AC_SUBST(LTVER)
 
 # Capture c flags
@@ -69,75 +69,52 @@ if test "x${LIBZSYNC_GCOV}" == "xyes"; then
     fi
 fi
 
-# libzmq integration
-AC_ARG_WITH([libzmq],
-            [AS_HELP_STRING([--with-libzmq],
-                            [Specify libzmq prefix])],
-            [search_libzmq="yes"],
-            [])
+PREVIOUS_CFLAGS="${CFLAGS}"
+PREVIOUS_LIBS="${LIBS}"
 
-if test "x$search_libzmq" = "xyes"; then
-    if test -r "${with_libzmq}/include/zmq.h"; then
-        CFLAGS="-I${with_libzmq}/include ${CFLAGS}"
-        LDFLAGS="-L${with_libzmq}/lib ${LDFLAGS}"
-    else
-        AC_MSG_ERROR([${with_libzmq}/include/zmq.h not found. Please check libzmq prefix])
-    fi
+
+was_zmq_check_lib_detected=no
+
+PKG_CHECK_MODULES([zmq], [libzmq >= 2.2.0],,
+    [AC_MSG_ERROR([Cannot find required package for libzmq. Note, pkg-config is required due to specified version >= 2.2.0])
+  ])
+
+if test "x$was_zmq_check_lib_detected" = "xno"; then
+    CFLAGS="${zmq_CFLAGS} ${CFLAGS}"
+    LIBS="${zmq_LIBS} ${LIBS}"
 fi
 
-AC_CHECK_LIB(zmq, zmq_init,
-    LIBS="-lzmq $LIBS",
-    [AC_MSG_ERROR([cannot link with -lzmq, install libzmq.])])
 
-PKG_CHECK_MODULES([zmq], [libzmq >= 2.2.0])
+was_czmq_check_lib_detected=no
 
-# libczmq integration
-AC_ARG_WITH([libczmq],
-            [AS_HELP_STRING([--with-libczmq],
-                            [Specify libczmq prefix])],
-            [search_libczmq="yes"],
-            [])
+PKG_CHECK_MODULES([czmq], [libczmq >= 3.1.0],,
+    [AC_MSG_ERROR([Cannot find required package for libczmq. Note, pkg-config is required due to specified version >= 3.1.0])
+  ])
 
-if test "x$search_libczmq" = "xyes"; then
-    if test -r "${with_libczmq}/include/czmq.h"; then
-        CFLAGS="-I${with_libczmq}/include ${CFLAGS}"
-        LDFLAGS="-L${with_libczmq}/lib ${LDFLAGS}"
-    else
-        AC_MSG_ERROR([${with_libczmq}/include/czmq.h not found. Please check libczmq prefix])
-    fi
+if test "x$was_czmq_check_lib_detected" = "xno"; then
+    CFLAGS="${czmq_CFLAGS} ${CFLAGS}"
+    LIBS="${czmq_LIBS} ${LIBS}"
 fi
 
-AC_CHECK_LIB(czmq, zctx_test,
-    LIBS="-lczmq $LIBS",
-    [AC_MSG_ERROR([cannot link with -lczmq, install libczmq.])])
 
-PKG_CHECK_MODULES([czmq], [libczmq >= 3.0.0])
+was_zyre_check_lib_detected=no
 
-# libzyre integration
-AC_ARG_WITH([libzyre],
-            [AS_HELP_STRING([--with-libzyre],
-                            [Specify libzyre prefix])],
-            [search_libzyre="yes"],
-            [])
+PKG_CHECK_MODULES([zyre], [libzyre >= 1.1.0],,
+    [AC_MSG_ERROR([Cannot find required package for libzyre. Note, pkg-config is required due to specified version >= 1.1.0])
+  ])
 
-if test "x$search_libzyre" = "xyes"; then
-    if test -r "${with_libzyre}/include/zyre.h"; then
-        CFLAGS="-I${with_libzyre}/include ${CFLAGS}"
-        LDFLAGS="-L${with_libzyre}/lib ${LDFLAGS}"
-    else
-        AC_MSG_ERROR([${with_libzyre}/include/zyre.h not found. Please check libzyre prefix])
-    fi
+if test "x$was_zyre_check_lib_detected" = "xno"; then
+    CFLAGS="${zyre_CFLAGS} ${CFLAGS}"
+    LIBS="${zyre_LIBS} ${LIBS}"
 fi
 
-AC_CHECK_LIB(zyre, zyre_test,
-    LIBS="-lzyre $LIBS",
-    [AC_MSG_ERROR([cannot link with -lzyre, install libzyre.])])
 
-PKG_CHECK_MODULES([zyre], [libzyre >= 1.1.0])
-
+CFLAGS="${PREVIOUS_CFLAGS}"
+LIBS="${PREVIOUS_LIBS}"
 
 # Platform specific checks
 libzsync_on_mingw32="no"
+libzsync_on_cygwin="no"
 libzsync_on_android="no"
 
 # Host specific checks
@@ -229,6 +206,7 @@ case "${host_os}" in
         # Define on Cygwin to enable all library features
         CPPFLAGS="-D_GNU_SOURCE $CPPFLAGS"
         AC_DEFINE(LIBZSYNC_HAVE_CYGWIN, 1, [Have Cygwin])
+        libzsync_on_cygwin="yes"
         ;;
     *)
         AC_MSG_ERROR([unsupported system: ${host_os}.])
@@ -257,17 +235,19 @@ AC_TYPE_SSIZE_T
 AC_HEADER_TIME
 AC_TYPE_UINT32_T
 AC_C_VOLATILE
+AC_C_BIGENDIAN
 
 # These options are GNU compiler specific.
 if test "x$GCC" = "xyes"; then
     CPPFLAGS="-pedantic -Werror -Wall -Wc++-compat ${CPPFLAGS}"
 fi
 
+AM_CONDITIONAL(ENABLE_SHARED, test "x$enable_shared" = "xyes")
 AM_CONDITIONAL(ON_MINGW, test "x$libzsync_on_mingw32" = "xyes")
+AM_CONDITIONAL(ON_CYGWIN, test "x$libzsync_on_cygwin" = "xyes")
 AM_CONDITIONAL(ON_ANDROID, test "x$libzsync_on_android" = "xyes")
 AM_CONDITIONAL(INSTALL_MAN, test "x$libzsync_install_man" = "xyes")
 AM_CONDITIONAL(BUILD_DOC, test "x$libzsync_build_doc" = "xyes")
-AM_CONDITIONAL([ENABLE_LABS], [test "x$enable_labs" = "xyes"])
 
 # Checks for library functions.
 AC_TYPE_SIGNAL
@@ -280,7 +260,10 @@ AC_ARG_WITH([pkgconfigdir], AS_HELP_STRING([--with-pkgconfigdir=PATH],
 AC_SUBST([pkgconfigdir])
 
 # Specify output files
-AC_CONFIG_FILES([Makefile doc/Makefile src/liblibzsync.pc])
+AC_CONFIG_FILES([Makefile
+                 doc/Makefile
+                 src/liblibzsync.pc
+                 ])
 AC_OUTPUT
 
 ################################################################################

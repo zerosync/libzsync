@@ -26,7 +26,6 @@
 struct _zsync_node_t {
     zsock_t *pipe;             //  Pipe back to application
     zyre_t *zyre;              //  Zyre instance for P2P communication
-    zsock_t *outbox;           //  Outbox back to application
     zpoller_t *poller;
 
     bool terminated;
@@ -47,7 +46,6 @@ zsync_node_new (zsock_t *pipe, void *args)
 
     self->zyre = zyre_new ("test");
     self->pipe = pipe;
-    self->outbox = (zsock_t *) args;
     self->poller = zpoller_new (self->pipe, NULL);
     self->peers = zhash_new ();
 
@@ -69,7 +67,6 @@ zsync_node_destroy (zsync_node_t **self_p)
 
         //  Free class properties
         zyre_destroy (&self->zyre);
-        zsock_destroy (&self->outbox);
         zhash_destroy (&self->peers);
 
         //  Free object itself
@@ -106,7 +103,6 @@ zyre_node_stop (zsync_node_t *self)
    
     //  Stop polling on zyre socket
     zpoller_remove (self->poller, zyre_socket (self->zyre));
-    zstr_sendm (self->outbox, "STOP");
     return 0;
 }
 
