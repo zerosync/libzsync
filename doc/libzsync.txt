@@ -1,0 +1,25 @@
+Name(7)
+=======
+
+
+NAME
+----
+libzsync - open source peer to peer file sharing.
+
+
+SYNOPSIS
+--------
+----
+#include <libzsync.h>
+
+cc ['flags'] 'files' -lzmq -llibzsync ['libraries']
+----
+
+
+DESCRIPTION
+-----------
+
+Classes
+~~~~~~~
+
+Something.

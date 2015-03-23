@@ -1,0 +1,84 @@
+The following ABNF grammar defines the the API which is used to comminicate with user interface clients:
+
+    zsync_api   = (REQ_STATE RES_STATE)
+               /= UPDATE
+               /= REQ_FILES
+               /= (REQ_CHUNK RES_CHUNK)
+
+    ;  Requests the current state.                                           
+
+    REQ-STATE       = signature %d1
+    signature       = %xAA %xA0             ; two octets
+
+    ;  Responds to REQ_STATE with current state.                             
+
+    RES-STATE       = signature %d2 state
+    state           = number-8              ; 
+
+    ;  Requests an update for all changes with a newer state then 'state'.   
+
+    REQ-UPDATE      = signature %d3 state
+    state           = number-8              ; 
+
+    ;  Sends a list of updated files to the client.                          
+
+    UPDATE          = signature %d4 sender update_msg
+    sender          = string                ; UUID that identifies the sender
+    update_msg      = msg                   ; List of updated files and their metadata
+
+    ;  Requests a list of files from receiver.                               
+
+    REQ-FILES       = signature %d5 receiver files size
+    receiver        = string                ; UUID that identifies the receiver
+    files           = strings               ; List of file names
+    size            = number-8              ; Total size of all files in bytes
+
+    ;  Requests a chunk of 'chunk_size' data from 'path' at 'offset'.        
+
+    REQ-CHUNK       = signature %d6 path chunk_size offset
+    path            = string                ; Path of file that the 'chunk' belongs to 
+    chunk_size      = number-8              ; Size of the requested chunk in bytes
+    offset          = number-8              ; File offset for for the chunk in bytes
+
+    ;  Responds with the requested chunk.                                    
+
+    RES-CHUNK       = signature %d7 chunk
+    chunk           = chunk                 ; Requested chunk
+
+    ;  Sends one 'chunk' of data of a file at the 'path'.                    
+
+    CHUNK           = signature %d8 chunk path sequence offset
+    chunk           = chunk                 ; This chunk is part of the file at 'path'
+    path            = string                ; Path of file that the 'chunk' belongs to 
+    sequence        = number-8              ; Defines which chunk of the file at 'path' this is!
+    offset          = number-8              ; Offset for this 'chunk' in bytes
+
+    ;  Sends an abort for one file at path.                                  
+
+    ABORT           = signature %d9 receiver path
+    receiver        = string                ; UUID that identifies the receiver
+    path            = string                ; 
+
+    ;  Terminate all worker threads.                                         
+
+    TERMINATE       = signature %d10
+
+    ; A list of string values
+    strings         = strings-count *strings-value
+    strings-count   = number-4
+    strings-value   = longstr
+
+    ; A chunk has 4-octet length + binary contents
+    chunk           = number-4 *OCTET
+
+    ; A msg is zero or more distinct frames
+    msg             = *frame
+
+    ; Strings are always length + text contents
+    string          = number-1 *VCHAR
+    longstr         = number-4 *VCHAR
+
+    ; Numbers are unsigned integers in network byte order
+    number-1        = 1OCTET
+    number-4        = 4OCTET
+    number-8        = 8OCTET
