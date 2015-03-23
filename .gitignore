@@ -66,4 +66,4 @@ builds/android/zyre
 src/app/jni/output
 
 # Other
-# *.swp
+*.swp
