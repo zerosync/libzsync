@@ -39,7 +39,7 @@ struct _zsync_msg_t {
     int id;                             //  zsync_msg message ID
     byte *needle;                       //  Read/write pointer for serialization
     byte *ceiling;                      //  Valid upper limit for read pointer
-    /*                */
+    /* State of the peer we're greeting  */
     uint64_t state;
     /* UUID that identifies the sender  */
     char sender [256];
@@ -51,16 +51,16 @@ struct _zsync_msg_t {
     zlist_t *files;
     /* Total size of all files in bytes  */
     uint64_t size;
+    /* Credit amount in bytes  */
+    uint64_t amount;
+    /* This chunk is part of the file at 'path'  */
+    zchunk_t *chunk;
     /* Path of file that the 'chunk' belongs to   */
     char path [256];
-    /* Size of the requested chunk in bytes  */
-    uint64_t chunk_size;
-    /* File offset for for the chunk in bytes  */
-    uint64_t offset;
-    /* Requested chunk  */
-    zchunk_t *chunk;
     /* Defines which chunk of the file at 'path' this is!  */
     uint64_t sequence;
+    /* Offset for this 'chunk' in bytes  */
+    uint64_t offset;
 };
 
 //  --------------------------------------------------------------------------
@@ -288,14 +288,7 @@ zsync_msg_recv (zsync_msg_t *self, zsock_t *input)
     GET_NUMBER1 (self->id);
 
     switch (self->id) {
-        case ZSYNC_MSG_REQ_STATE:
-            break;
-
-        case ZSYNC_MSG_RES_STATE:
-            GET_NUMBER8 (self->state);
-            break;
-
-        case ZSYNC_MSG_REQ_UPDATE:
+        case ZSYNC_MSG_HELLO:
             GET_NUMBER8 (self->state);
             break;
 
@@ -309,7 +302,7 @@ zsync_msg_recv (zsync_msg_t *self, zsock_t *input)
                 self->update_msg = zmsg_new ();
             break;
 
-        case ZSYNC_MSG_REQ_FILES:
+        case ZSYNC_MSG_FILES:
             GET_STRING (self->receiver);
             {
                 size_t list_size;
@@ -326,24 +319,8 @@ zsync_msg_recv (zsync_msg_t *self, zsock_t *input)
             GET_NUMBER8 (self->size);
             break;
 
-        case ZSYNC_MSG_REQ_CHUNK:
-            GET_STRING (self->path);
-            GET_NUMBER8 (self->chunk_size);
-            GET_NUMBER8 (self->offset);
-            break;
-
-        case ZSYNC_MSG_RES_CHUNK:
-            {
-                size_t chunk_size;
-                GET_NUMBER4 (chunk_size);
-                if (self->needle + chunk_size > (self->ceiling)) {
-                    zsys_warning ("zsync_msg: chunk is missing data");
-                    goto malformed;
-                }
-                zchunk_destroy (&self->chunk);
-                self->chunk = zchunk_new (self->needle, chunk_size);
-                self->needle += chunk_size;
-            }
+        case ZSYNC_MSG_CREDIT:
+            GET_NUMBER8 (self->amount);
             break;
 
         case ZSYNC_MSG_CHUNK:
@@ -366,9 +343,6 @@ zsync_msg_recv (zsync_msg_t *self, zsock_t *input)
         case ZSYNC_MSG_ABORT:
             GET_STRING (self->receiver);
             GET_STRING (self->path);
-            break;
-
-        case ZSYNC_MSG_TERMINATE:
             break;
 
         default:
@@ -402,16 +376,13 @@ zsync_msg_send (zsync_msg_t *self, zsock_t *output)
 
     size_t frame_size = 2 + 1;          //  Signature and message ID
     switch (self->id) {
-        case ZSYNC_MSG_RES_STATE:
-            frame_size += 8;            //  state
-            break;
-        case ZSYNC_MSG_REQ_UPDATE:
+        case ZSYNC_MSG_HELLO:
             frame_size += 8;            //  state
             break;
         case ZSYNC_MSG_UPDATE:
             frame_size += 1 + strlen (self->sender);
             break;
-        case ZSYNC_MSG_REQ_FILES:
+        case ZSYNC_MSG_FILES:
             frame_size += 1 + strlen (self->receiver);
             frame_size += 4;            //  Size is 4 octets
             if (self->files) {
@@ -423,15 +394,8 @@ zsync_msg_send (zsync_msg_t *self, zsock_t *output)
             }
             frame_size += 8;            //  size
             break;
-        case ZSYNC_MSG_REQ_CHUNK:
-            frame_size += 1 + strlen (self->path);
-            frame_size += 8;            //  chunk_size
-            frame_size += 8;            //  offset
-            break;
-        case ZSYNC_MSG_RES_CHUNK:
-            frame_size += 4;            //  Size is 4 octets
-            if (self->chunk)
-                frame_size += zchunk_size (self->chunk);
+        case ZSYNC_MSG_CREDIT:
+            frame_size += 8;            //  amount
             break;
         case ZSYNC_MSG_CHUNK:
             frame_size += 4;            //  Size is 4 octets
@@ -456,11 +420,7 @@ zsync_msg_send (zsync_msg_t *self, zsock_t *output)
     size_t nbr_frames = 1;              //  Total number of frames to send
     
     switch (self->id) {
-        case ZSYNC_MSG_RES_STATE:
-            PUT_NUMBER8 (self->state);
-            break;
-
-        case ZSYNC_MSG_REQ_UPDATE:
+        case ZSYNC_MSG_HELLO:
             PUT_NUMBER8 (self->state);
             break;
 
@@ -470,7 +430,7 @@ zsync_msg_send (zsync_msg_t *self, zsock_t *output)
             send_update_msg = true;
             break;
 
-        case ZSYNC_MSG_REQ_FILES:
+        case ZSYNC_MSG_FILES:
             PUT_STRING (self->receiver);
             if (self->files) {
                 PUT_NUMBER4 (zlist_size (self->files));
@@ -485,22 +445,8 @@ zsync_msg_send (zsync_msg_t *self, zsock_t *output)
             PUT_NUMBER8 (self->size);
             break;
 
-        case ZSYNC_MSG_REQ_CHUNK:
-            PUT_STRING (self->path);
-            PUT_NUMBER8 (self->chunk_size);
-            PUT_NUMBER8 (self->offset);
-            break;
-
-        case ZSYNC_MSG_RES_CHUNK:
-            if (self->chunk) {
-                PUT_NUMBER4 (zchunk_size (self->chunk));
-                memcpy (self->needle,
-                        zchunk_data (self->chunk),
-                        zchunk_size (self->chunk));
-                self->needle += zchunk_size (self->chunk);
-            }
-            else
-                PUT_NUMBER4 (0);    //  Empty chunk
+        case ZSYNC_MSG_CREDIT:
+            PUT_NUMBER8 (self->amount);
             break;
 
         case ZSYNC_MSG_CHUNK:
@@ -551,17 +497,8 @@ zsync_msg_print (zsync_msg_t *self)
 {
     assert (self);
     switch (self->id) {
-        case ZSYNC_MSG_REQ_STATE:
-            zsys_debug ("ZSYNC_MSG_REQ_STATE:");
-            break;
-            
-        case ZSYNC_MSG_RES_STATE:
-            zsys_debug ("ZSYNC_MSG_RES_STATE:");
-            zsys_debug ("    state=%ld", (long) self->state);
-            break;
-            
-        case ZSYNC_MSG_REQ_UPDATE:
-            zsys_debug ("ZSYNC_MSG_REQ_UPDATE:");
+        case ZSYNC_MSG_HELLO:
+            zsys_debug ("ZSYNC_MSG_HELLO:");
             zsys_debug ("    state=%ld", (long) self->state);
             break;
             
@@ -578,8 +515,8 @@ zsync_msg_print (zsync_msg_t *self)
                 zsys_debug ("(NULL)");
             break;
             
-        case ZSYNC_MSG_REQ_FILES:
-            zsys_debug ("ZSYNC_MSG_REQ_FILES:");
+        case ZSYNC_MSG_FILES:
+            zsys_debug ("ZSYNC_MSG_FILES:");
             if (self->receiver)
                 zsys_debug ("    receiver='%s'", self->receiver);
             else
@@ -595,19 +532,9 @@ zsync_msg_print (zsync_msg_t *self)
             zsys_debug ("    size=%ld", (long) self->size);
             break;
             
-        case ZSYNC_MSG_REQ_CHUNK:
-            zsys_debug ("ZSYNC_MSG_REQ_CHUNK:");
-            if (self->path)
-                zsys_debug ("    path='%s'", self->path);
-            else
-                zsys_debug ("    path=");
-            zsys_debug ("    chunk_size=%ld", (long) self->chunk_size);
-            zsys_debug ("    offset=%ld", (long) self->offset);
-            break;
-            
-        case ZSYNC_MSG_RES_CHUNK:
-            zsys_debug ("ZSYNC_MSG_RES_CHUNK:");
-            zsys_debug ("    chunk=[ ... ]");
+        case ZSYNC_MSG_CREDIT:
+            zsys_debug ("ZSYNC_MSG_CREDIT:");
+            zsys_debug ("    amount=%ld", (long) self->amount);
             break;
             
         case ZSYNC_MSG_CHUNK:
@@ -631,10 +558,6 @@ zsync_msg_print (zsync_msg_t *self)
                 zsys_debug ("    path='%s'", self->path);
             else
                 zsys_debug ("    path=");
-            break;
-            
-        case ZSYNC_MSG_TERMINATE:
-            zsys_debug ("ZSYNC_MSG_TERMINATE:");
             break;
             
     }
@@ -684,35 +607,23 @@ zsync_msg_command (zsync_msg_t *self)
 {
     assert (self);
     switch (self->id) {
-        case ZSYNC_MSG_REQ_STATE:
-            return ("REQ_STATE");
-            break;
-        case ZSYNC_MSG_RES_STATE:
-            return ("RES_STATE");
-            break;
-        case ZSYNC_MSG_REQ_UPDATE:
-            return ("REQ_UPDATE");
+        case ZSYNC_MSG_HELLO:
+            return ("HELLO");
             break;
         case ZSYNC_MSG_UPDATE:
             return ("UPDATE");
             break;
-        case ZSYNC_MSG_REQ_FILES:
-            return ("REQ_FILES");
+        case ZSYNC_MSG_FILES:
+            return ("FILES");
             break;
-        case ZSYNC_MSG_REQ_CHUNK:
-            return ("REQ_CHUNK");
-            break;
-        case ZSYNC_MSG_RES_CHUNK:
-            return ("RES_CHUNK");
+        case ZSYNC_MSG_CREDIT:
+            return ("CREDIT");
             break;
         case ZSYNC_MSG_CHUNK:
             return ("CHUNK");
             break;
         case ZSYNC_MSG_ABORT:
             return ("ABORT");
-            break;
-        case ZSYNC_MSG_TERMINATE:
-            return ("TERMINATE");
             break;
     }
     return "?";
@@ -867,60 +778,20 @@ zsync_msg_set_size (zsync_msg_t *self, uint64_t size)
 
 
 //  --------------------------------------------------------------------------
-//  Get/set the path field
-
-const char *
-zsync_msg_path (zsync_msg_t *self)
-{
-    assert (self);
-    return self->path;
-}
-
-void
-zsync_msg_set_path (zsync_msg_t *self, const char *value)
-{
-    assert (self);
-    assert (value);
-    if (value == self->path)
-        return;
-    strncpy (self->path, value, 255);
-    self->path [255] = 0;
-}
-
-
-//  --------------------------------------------------------------------------
-//  Get/set the chunk_size field
+//  Get/set the amount field
 
 uint64_t
-zsync_msg_chunk_size (zsync_msg_t *self)
+zsync_msg_amount (zsync_msg_t *self)
 {
     assert (self);
-    return self->chunk_size;
+    return self->amount;
 }
 
 void
-zsync_msg_set_chunk_size (zsync_msg_t *self, uint64_t chunk_size)
+zsync_msg_set_amount (zsync_msg_t *self, uint64_t amount)
 {
     assert (self);
-    self->chunk_size = chunk_size;
-}
-
-
-//  --------------------------------------------------------------------------
-//  Get/set the offset field
-
-uint64_t
-zsync_msg_offset (zsync_msg_t *self)
-{
-    assert (self);
-    return self->offset;
-}
-
-void
-zsync_msg_set_offset (zsync_msg_t *self, uint64_t offset)
-{
-    assert (self);
-    self->offset = offset;
+    self->amount = amount;
 }
 
 
@@ -958,6 +829,28 @@ zsync_msg_set_chunk (zsync_msg_t *self, zchunk_t **chunk_p)
 
 
 //  --------------------------------------------------------------------------
+//  Get/set the path field
+
+const char *
+zsync_msg_path (zsync_msg_t *self)
+{
+    assert (self);
+    return self->path;
+}
+
+void
+zsync_msg_set_path (zsync_msg_t *self, const char *value)
+{
+    assert (self);
+    assert (value);
+    if (value == self->path)
+        return;
+    strncpy (self->path, value, 255);
+    self->path [255] = 0;
+}
+
+
+//  --------------------------------------------------------------------------
 //  Get/set the sequence field
 
 uint64_t
@@ -972,6 +865,24 @@ zsync_msg_set_sequence (zsync_msg_t *self, uint64_t sequence)
 {
     assert (self);
     self->sequence = sequence;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Get/set the offset field
+
+uint64_t
+zsync_msg_offset (zsync_msg_t *self)
+{
+    assert (self);
+    return self->offset;
+}
+
+void
+zsync_msg_set_offset (zsync_msg_t *self, uint64_t offset)
+{
+    assert (self);
+    self->offset = offset;
 }
 
 
@@ -1005,29 +916,7 @@ zsync_msg_test (bool verbose)
     //  Encode/send/decode and verify each message type
     int instance;
     self = zsync_msg_new ();
-    zsync_msg_set_id (self, ZSYNC_MSG_REQ_STATE);
-
-    //  Send twice
-    zsync_msg_send (self, output);
-    zsync_msg_send (self, output);
-
-    for (instance = 0; instance < 2; instance++) {
-        zsync_msg_recv (self, input);
-        assert (zsync_msg_routing_id (self));
-    }
-    zsync_msg_set_id (self, ZSYNC_MSG_RES_STATE);
-
-    zsync_msg_set_state (self, 123);
-    //  Send twice
-    zsync_msg_send (self, output);
-    zsync_msg_send (self, output);
-
-    for (instance = 0; instance < 2; instance++) {
-        zsync_msg_recv (self, input);
-        assert (zsync_msg_routing_id (self));
-        assert (zsync_msg_state (self) == 123);
-    }
-    zsync_msg_set_id (self, ZSYNC_MSG_REQ_UPDATE);
+    zsync_msg_set_id (self, ZSYNC_MSG_HELLO);
 
     zsync_msg_set_state (self, 123);
     //  Send twice
@@ -1055,13 +944,13 @@ zsync_msg_test (bool verbose)
         assert (streq (zsync_msg_sender (self), "Life is short but Now lasts for ever"));
         assert (zmsg_size (zsync_msg_update_msg (self)) == 1);
     }
-    zsync_msg_set_id (self, ZSYNC_MSG_REQ_FILES);
+    zsync_msg_set_id (self, ZSYNC_MSG_FILES);
 
     zsync_msg_set_receiver (self, "Life is short but Now lasts for ever");
-    zlist_t *req_files_files = zlist_new ();
-    zlist_append (req_files_files, "Name: Brutus");
-    zlist_append (req_files_files, "Age: 43");
-    zsync_msg_set_files (self, &req_files_files);
+    zlist_t *files_files = zlist_new ();
+    zlist_append (files_files, "Name: Brutus");
+    zlist_append (files_files, "Age: 43");
+    zsync_msg_set_files (self, &files_files);
     zsync_msg_set_size (self, 123);
     //  Send twice
     zsync_msg_send (self, output);
@@ -1078,11 +967,9 @@ zsync_msg_test (bool verbose)
         zlist_destroy (&files);
         assert (zsync_msg_size (self) == 123);
     }
-    zsync_msg_set_id (self, ZSYNC_MSG_REQ_CHUNK);
+    zsync_msg_set_id (self, ZSYNC_MSG_CREDIT);
 
-    zsync_msg_set_path (self, "Life is short but Now lasts for ever");
-    zsync_msg_set_chunk_size (self, 123);
-    zsync_msg_set_offset (self, 123);
+    zsync_msg_set_amount (self, 123);
     //  Send twice
     zsync_msg_send (self, output);
     zsync_msg_send (self, output);
@@ -1090,22 +977,7 @@ zsync_msg_test (bool verbose)
     for (instance = 0; instance < 2; instance++) {
         zsync_msg_recv (self, input);
         assert (zsync_msg_routing_id (self));
-        assert (streq (zsync_msg_path (self), "Life is short but Now lasts for ever"));
-        assert (zsync_msg_chunk_size (self) == 123);
-        assert (zsync_msg_offset (self) == 123);
-    }
-    zsync_msg_set_id (self, ZSYNC_MSG_RES_CHUNK);
-
-    zchunk_t *res_chunk_chunk = zchunk_new ("Captcha Diem", 12);
-    zsync_msg_set_chunk (self, &res_chunk_chunk);
-    //  Send twice
-    zsync_msg_send (self, output);
-    zsync_msg_send (self, output);
-
-    for (instance = 0; instance < 2; instance++) {
-        zsync_msg_recv (self, input);
-        assert (zsync_msg_routing_id (self));
-        assert (memcmp (zchunk_data (zsync_msg_chunk (self)), "Captcha Diem", 12) == 0);
+        assert (zsync_msg_amount (self) == 123);
     }
     zsync_msg_set_id (self, ZSYNC_MSG_CHUNK);
 
@@ -1139,16 +1011,6 @@ zsync_msg_test (bool verbose)
         assert (zsync_msg_routing_id (self));
         assert (streq (zsync_msg_receiver (self), "Life is short but Now lasts for ever"));
         assert (streq (zsync_msg_path (self), "Life is short but Now lasts for ever"));
-    }
-    zsync_msg_set_id (self, ZSYNC_MSG_TERMINATE);
-
-    //  Send twice
-    zsync_msg_send (self, output);
-    zsync_msg_send (self, output);
-
-    for (instance = 0; instance < 2; instance++) {
-        zsync_msg_recv (self, input);
-        assert (zsync_msg_routing_id (self));
     }
 
     zsync_msg_destroy (&self);

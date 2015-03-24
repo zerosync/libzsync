@@ -12,7 +12,7 @@ Name: liblibzsync
 Description: open source peer to peer file sharing.
 Version: @VERSION@
 
-Requires:libzmq >= 2.2.0 libczmq >= 3.1.0 libzyre >= 1.1.0
+Requires:libzmq >= 2.2.1 libczmq >= 3.0.1 libzyre >= 1.1.0
 
 Libs: -L${libdir} -llibzsync
 Cflags: -I${includedir}

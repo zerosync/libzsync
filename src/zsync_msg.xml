@@ -13,7 +13,7 @@ This is the public protocol/api for communication with user interface clients.
 <include filename = "../license.xml" />
 
 <grammar>
-    zsync_api   = (REQ_STATE RES_STATE)
+    zsync_api   = HELLO
                /= UPDATE
                /= REQ_FILES
                /= (REQ_CHUNK RES_CHUNK)
@@ -23,46 +23,30 @@ This is the public protocol/api for communication with user interface clients.
 <header>
 </header>
 
-<message name = "REQ_STATE" id = "1">
-Requests the current state. 
+<message name = "HELLO" id = "1">
+    <field name = "state" type = "number" size = "8" >State of the peer we're greeting</field>
+Greet a new peer with it's known state.    
 </message>
 
-<message name = "RES_STATE" id = "2">
-    <field name = "state" type = "number" size = "8" />
-Responds to REQ_STATE with current state.
-</message>
-
-<message name = "REQ_UPDATE" id = "3">
-    <field name = "state" type = "number" size = "8"/>
-Requests an update for all changes with a newer state then 'state'.
-</message>
-
-<message name = "UPDATE" id = "4">
+<message name = "UPDATE" id = "2">
     <field name = "sender" type = "string">UUID that identifies the sender</field>
     <field name = "update_msg" type = "msg">List of updated files and their metadata</field>
 Sends a list of updated files to the client.
 </message>
 
-<message name = "REQ_FILES" id = "5">
+<message name = "FILES" id = "3">
     <field name = "receiver" type = "string">UUID that identifies the receiver</field>
     <field name = "files" type = "strings">List of file names</field>
     <field name = "size" type = "number" size = "8">Total size of all files in bytes</field>
 Requests a list of files from receiver.
 </message>
 
-<message name = "REQ_CHUNK" id = "6">
-    <field name = "path" type = "string">Path of file that the 'chunk' belongs to </field>
-    <field name = "chunk_size" type = "number" size = "8">Size of the requested chunk in bytes</field>
-    <field name = "offset" type = "number" size = "8">File offset for for the chunk in bytes</field>
-Requests a chunk of 'chunk_size' data from 'path' at 'offset'.
+<message name = "CREDIT" id = "4">
+   <field name = "amount" type = "number" size = "8">Credit amount in bytes</field>
+Sends a credit amount for requested files.
 </message>
 
-<message name = "RES_CHUNK" id = "7">
-    <field name = "chunk" type = "chunk">Requested chunk</field>
-Responds with the requested chunk.
-</message>
-
-<message name = "CHUNK" id = "8">
+<message name = "CHUNK" id = "5">
     <field name = "chunk" type = "chunk">This chunk is part of the file at 'path'</field>
     <field name = "path" type = "string">Path of file that the 'chunk' belongs to </field>
     <field name = "sequence" type = "number" size = "8">Defines which chunk of the file at 'path' this is!</field>
@@ -70,14 +54,10 @@ Responds with the requested chunk.
 Sends one 'chunk' of data of a file at the 'path'.
 </message>
 
-<message name = "ABORT" id = "9">
+<message name = "ABORT" id = "6">
     <field name = "receiver" type = "string">UUID that identifies the receiver</field>
     <field name = "path" type = "string"></field>
 Sends an abort for one file at path.
-</message>
-
-<message name = "TERMINATE" id = "10">
-Terminate all worker threads.
 </message>
 
 </class>

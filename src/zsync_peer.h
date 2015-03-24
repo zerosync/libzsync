@@ -23,15 +23,23 @@ typedef struct _zsync_peer_t zsync_peer_t;
 //  @interface
 //  Create a new zsync_peer
 LIBZSYNC_EXPORT zsync_peer_t *
-    zsync_peer_new (char *uuid, uint64_t state);
+    zsync_peer_new (char *name, char *zyre_id, uint64_t state);
 
 //  Destroy the zsync_peer
 LIBZSYNC_EXPORT void
     zsync_peer_destroy (zsync_peer_t **self_p);
 
-//  Get the UUID of this peer
+//  Get the name of this peer
 LIBZSYNC_EXPORT char *
-    zsync_peer_uuid (zsync_peer_t *self);
+    zsync_peer_name (zsync_peer_t *self);
+
+//  Get the zyre_id of this peer
+LIBZSYNC_EXPORT char *
+    zsync_peer_zyre_id (zsync_peer_t *self);
+
+//  Set the zyre_id of this peer
+LIBZSYNC_EXPORT void
+zsync_peer_set_zyre_id (zsync_peer_t *self, char *zyre_id);
 
 //  Get the state of this peer
 LIBZSYNC_EXPORT uint64_t

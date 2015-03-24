@@ -28,10 +28,11 @@ struct _zsync_node_t {
     zyre_t *zyre;              //  Zyre instance for P2P communication
     zpoller_t *poller;
 
+    char *name;
     bool terminated;
     bool verbose;
 
-    zhash_t *peers;
+    zlist_t *peers;
 };
 
 
@@ -44,10 +45,11 @@ zsync_node_new (zsock_t *pipe, void *args)
     zsync_node_t *self = (zsync_node_t *) zmalloc (sizeof (zsync_node_t));
     assert (self);
 
+    //  Initialize class properties
     self->zyre = zyre_new ("test");
     self->pipe = pipe;
     self->poller = zpoller_new (self->pipe, NULL);
-    self->peers = zhash_new ();
+    self->peers = zlist_new ();
 
     self->terminated = false;
 
@@ -67,7 +69,7 @@ zsync_node_destroy (zsync_node_t **self_p)
 
         //  Free class properties
         zyre_destroy (&self->zyre);
-        zhash_destroy (&self->peers);
+        zlist_destroy (&self->peers);
 
         //  Free object itself
         free (self);
@@ -76,14 +78,28 @@ zsync_node_destroy (zsync_node_t **self_p)
 }
 
 
-// Start node, return 0 if OK, 1 if not possible
+//  Start node, return 0 if OK, 1 if not possible
 
 static int
 zyre_node_start (zsync_node_t *self)
 {
+    //  Load known peers
+    zconfig_t *config = zconfig_load (zsys_sprintf ("%s.cfg", self->name));
+    if (config) {
+        zconfig_t *peer_conf = zconfig_child (config);
+        while (peer_conf) {
+            char *peer_name = zconfig_name (peer_conf);
+            uint64_t peer_state;
+            sscanf (zconfig_value (peer_conf), "%"SCNu64, &peer_state);
+            //  Add peer to list of known peers
+            zlist_append (self->peers, zsync_peer_new (peer_name, "", peer_state));
+            //  Next peer conf sibling
+            peer_conf = zconfig_next (peer_conf);
+        }
+    }
 
-    zyre_set_header (self->zyre, "NAME", "%s", "myName");
-
+    //  Setup and start zyre
+    zyre_set_header (self->zyre, "ZS-NAME", "%s", self->name);
     int rc = zyre_start (self->zyre);
     assert (rc == 0);
     zyre_join (self->zyre, "ZSYNC");
@@ -93,21 +109,73 @@ zyre_node_start (zsync_node_t *self)
 }
 
 
-// Stop node, retrun 0 if OK, 1 if not possible
+//  Stop node, retrun 0 if OK, 1 if not possible
 
 static int
 zyre_node_stop (zsync_node_t *self)
 {
     zyre_leave (self->zyre, "ZSYNC");
     zyre_stop (self->zyre);
-   
     //  Stop polling on zyre socket
     zpoller_remove (self->poller, zyre_socket (self->zyre));
+
+    //  Save the current state of known peers
+    zconfig_t *config = zconfig_new ("peers", NULL);
+    zsync_peer_t *peer = (zsync_peer_t *) zlist_first (self->peers);
+    while (peer) {
+        char *peer_name = zsync_peer_name (peer);
+        char *peer_state = zsys_sprintf ("%"PRIu64, zsync_peer_state (peer));
+        zconfig_put (config, peer_name, peer_state);
+        //  Next peer
+        peer = (zsync_peer_t *) zlist_next (self->peers);
+    }
+    zconfig_save (config, zsys_sprintf ("%s.cfg", self->name));
+
     return 0;
 }
 
 
-// Here we handle the different control messages from the front-end
+//  Find peers by their name. Return the peer or NULL if none 
+//  for the name exists.
+
+static zsync_peer_t *
+zsync_find_peer_by_name (zsync_node_t *self, char *name)
+{
+   assert (self);
+   assert (name);
+
+   zsync_peer_t *peer = (zsync_peer_t *) zlist_first (self->peers);
+   while (peer) {
+      if (streq (name, zsync_peer_zyre_id (peer)))
+         return peer;
+      //  Get next peer in list
+      peer = (zsync_peer_t *) zlist_next (self->peers);
+   }
+   return NULL;
+}
+
+
+//  Find peers by their zyre_id. Return the peer or NULL if none 
+//  for the zyre_id exists.
+
+static zsync_peer_t *
+zsync_find_peer_by_zyre_id (zsync_node_t *self, char *zyre_id)
+{
+   assert (self);
+   assert (zyre_id);
+
+   zsync_peer_t *peer = (zsync_peer_t *) zlist_first (self->peers);
+   while (peer) {
+      if (streq (zyre_id, zsync_peer_zyre_id (peer)))
+         return peer;
+      //  Get next peer in list
+      peer = (zsync_peer_t *) zlist_next (self->peers);
+   }
+   return NULL;
+}
+
+
+//  Here we handle the different control messages from the front-end
 
 static void
 zsync_node_recv_api (zsync_node_t *self)
@@ -118,6 +186,13 @@ zsync_node_recv_api (zsync_node_t *self)
        return;        //  Interrupted
 
     char *command = zmsg_popstr (request);
+    if (streq (command, "SET NAME")) {
+       free (self->name);
+       self->name = zmsg_popstr (request);
+       assert (self->name);    
+       zsock_signal (self->pipe, 0);
+    }
+    else
     if (streq (command, "START"))
         zsock_signal (self->pipe, zyre_node_start (self));
     else
@@ -125,7 +200,7 @@ zsync_node_recv_api (zsync_node_t *self)
         zsock_signal (self->pipe, zyre_node_stop (self));
     else
     if (streq (command, "PEERS"))
-        zsock_send (self->pipe, "p", zhash_keys (self->peers));
+        zsock_send (self->pipe, "p", self->peers);
     else
     if (streq (command, "$TERM"))
        self->terminated = true;
@@ -137,6 +212,7 @@ zsync_node_recv_api (zsync_node_t *self)
 
 
 // --------------------------------------------------------------------------
+// Here we handle messages received by other peers.
 
 static void
 zsync_node_recv_peer (zsync_node_t *self)
@@ -144,31 +220,54 @@ zsync_node_recv_peer (zsync_node_t *self)
     //  Message from a zyre peer  
     zyre_event_t *msg = zyre_event_new (self->zyre);
 
-    const char *zyre_sender = zyre_event_sender (msg);
-    (void) zyre_sender;
+    char *zyre_sender = (char *) zyre_event_sender (msg);
+    zsync_peer_t *peer = zsync_find_peer_by_zyre_id (self, zyre_sender);
 
-    if (zyre_event_type (msg) == ZYRE_EVENT_ENTER)
-       printf ("ENTER %s\n", zyre_sender);
+    if (zyre_event_type (msg) == ZYRE_EVENT_ENTER) {
+       char *peer_name = (char *) zyre_event_header (msg, "ZS-NAME");
+       if (!peer) {
+          peer = zsync_find_peer_by_name (self, peer_name);
+          if (peer)
+              //  Update zyre id of existing peer.
+              zsync_peer_set_zyre_id (peer, zyre_sender);
+          else  {
+              //  Add new peer to the list.
+              peer = zsync_peer_new (peer_name, zyre_sender, 0);
+              zlist_append (self->peers, peer);
+          }
+       }
+
+       zsys_debug ("[%s]-->[%s] ENTER", zsync_peer_name (peer), self->name);
+    }
     else
     if (zyre_event_type (msg) == ZYRE_EVENT_EXIT)
-       printf ("EXIT %s\n", zyre_sender);
+       zsys_debug ("[%s]-->[%s] EXIT", zsync_peer_name (peer), self->name);
     else
-    if (zyre_event_type (msg) == ZYRE_EVENT_JOIN)
-       printf ("JOIN %s\n", zyre_sender);
+    if (zyre_event_type (msg) == ZYRE_EVENT_JOIN) {
+       zsys_debug ("[%s]-->[%s] JOIN", zsync_peer_name (peer), self->name);
+       zyre_whispers (self->zyre, zsync_peer_zyre_id (peer), "Hello %s", zsync_peer_name (peer));
+    }
     else
     if (zyre_event_type (msg) == ZYRE_EVENT_LEAVE)
-       printf ("LEAVE %s\n", zyre_sender);
+       zsys_debug ("[%s]-->[%s] LEAVE", zsync_peer_name (peer), self->name);
     else
-    if (zyre_event_type (msg) == ZYRE_EVENT_WHISPER)
-       printf ("WHISPER %s\n", zyre_sender);
+    if (zyre_event_type (msg) == ZYRE_EVENT_WHISPER) {
+       zmsg_t *zsmsg = zyre_event_msg (msg);
+       char *news = zmsg_popstr (zsmsg);
+       zsys_debug ("[%s]-->[%s] WHISPER: %s", zsync_peer_name (peer), self->name, news);
+    }
     else
-    if (zyre_event_type (msg) == ZYRE_EVENT_SHOUT)
-       printf ("SHOUT %s\n", zyre_sender);
+    if (zyre_event_type (msg) == ZYRE_EVENT_SHOUT) {
+       zsys_debug ("[%s]-->[%s] SHOUT", zsync_peer_name (peer), self->name);
+    }
+
+    zyre_event_destroy (&msg);
 }
 
 
 // --------------------------------------------------------------------------
 // This is the actor that runs a single node; it uses one thread, creates
+
 void
 zsync_node_actor (zsock_t *pipe, void *args)
 {

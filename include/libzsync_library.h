@@ -22,6 +22,7 @@
 //  Set up environment for the application
 
 //  External dependencies
+#include <czmq.h>
 #include <zyre.h>
 
 //  LIBZSYNC version macros for compile-time API detection

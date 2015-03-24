@@ -24,7 +24,8 @@
 //  Structure of our class
 
 struct _zsync_peer_t {
-    char *uuid;
+    char *name;             //  Name of ths node, restricted to 6 chars.
+    char *zyre_id;
     uint64_t state;
 };
 
@@ -33,13 +34,15 @@ struct _zsync_peer_t {
 //  Create a new zsync_peer.
 
 zsync_peer_t *
-zsync_peer_new (char *uuid, uint64_t state)
+zsync_peer_new (char *name, char *zyre_id, uint64_t state)
 {
     zsync_peer_t *self = (zsync_peer_t *) zmalloc (sizeof (zsync_peer_t));
     assert (self);
 
-    self->uuid = (char *) zmalloc (sizeof (char) * 32 + 1);
-    strcpy (self->uuid, uuid);
+    self->name = (char *) zmalloc (7);
+    memcpy (self->name, name, 6);
+    self->zyre_id = (char *) zmalloc (sizeof (char) * 32 + 1);
+    strcpy (self->zyre_id, zyre_id);
     self->state = state;
 
     return self;
@@ -56,7 +59,8 @@ zsync_peer_destroy (zsync_peer_t **self_p)
         zsync_peer_t *self = *self_p;
 
         //  Free class properties
-        free (self->uuid);
+        free (self->name);
+        free (self->zyre_id);
 
         //  Free object itself
         free (self);
@@ -66,13 +70,39 @@ zsync_peer_destroy (zsync_peer_t **self_p)
 
 
 //  --------------------------------------------------------------------------
-//  Get the UUID of this peer
+//  Get the name of this peer
 
 char *
-zsync_peer_uuid (zsync_peer_t *self)
+zsync_peer_name (zsync_peer_t *self)
 {
-   assert (self);
-   return self->uuid;
+    assert (self);
+    return self->name;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Get the zyre_id of this peer
+
+char *
+zsync_peer_zyre_id (zsync_peer_t *self)
+{
+    assert (self);
+    return self->zyre_id;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Set the zyre_id of this peer
+
+void
+zsync_peer_set_zyre_id (zsync_peer_t *self, char *zyre_id)
+{
+    assert (self);
+    assert (zyre_id);
+
+    free (self->zyre_id);
+    self->zyre_id = (char *) zmalloc (sizeof (char) * 32 + 1);
+    strcpy (self->zyre_id, zyre_id);
 }
 
 
@@ -106,7 +136,7 @@ zsync_peer_test (bool verbose)
 
     //  @selftest
     //  Simple create/destroy test
-    zsync_peer_t *self = zsync_peer_new ("123456", 0);
+    zsync_peer_t *self = zsync_peer_new ("123456", "AFLK45FDSLAF4543", 0);
     assert (self);
     zsync_peer_destroy (&self);
     //  @end

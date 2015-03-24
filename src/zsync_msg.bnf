@@ -1,53 +1,37 @@
 The following ABNF grammar defines the the API which is used to comminicate with user interface clients:
 
-    zsync_api   = (REQ_STATE RES_STATE)
+    zsync_api   = HELLO
                /= UPDATE
                /= REQ_FILES
                /= (REQ_CHUNK RES_CHUNK)
 
-    ;  Requests the current state.                                           
+    ;  Greet a new peer with it's known state.                               
 
-    REQ-STATE       = signature %d1
+    HELLO           = signature %d1 state
     signature       = %xAA %xA0             ; two octets
-
-    ;  Responds to REQ_STATE with current state.                             
-
-    RES-STATE       = signature %d2 state
-    state           = number-8              ; 
-
-    ;  Requests an update for all changes with a newer state then 'state'.   
-
-    REQ-UPDATE      = signature %d3 state
-    state           = number-8              ; 
+    state           = number-8              ; State of the peer we're greeting
 
     ;  Sends a list of updated files to the client.                          
 
-    UPDATE          = signature %d4 sender update_msg
+    UPDATE          = signature %d2 sender update_msg
     sender          = string                ; UUID that identifies the sender
     update_msg      = msg                   ; List of updated files and their metadata
 
     ;  Requests a list of files from receiver.                               
 
-    REQ-FILES       = signature %d5 receiver files size
+    FILES           = signature %d3 receiver files size
     receiver        = string                ; UUID that identifies the receiver
     files           = strings               ; List of file names
     size            = number-8              ; Total size of all files in bytes
 
-    ;  Requests a chunk of 'chunk_size' data from 'path' at 'offset'.        
+    ;  Sends a credit amount for requested files.                            
 
-    REQ-CHUNK       = signature %d6 path chunk_size offset
-    path            = string                ; Path of file that the 'chunk' belongs to 
-    chunk_size      = number-8              ; Size of the requested chunk in bytes
-    offset          = number-8              ; File offset for for the chunk in bytes
-
-    ;  Responds with the requested chunk.                                    
-
-    RES-CHUNK       = signature %d7 chunk
-    chunk           = chunk                 ; Requested chunk
+    CREDIT          = signature %d4 amount
+    amount          = number-8              ; Credit amount in bytes
 
     ;  Sends one 'chunk' of data of a file at the 'path'.                    
 
-    CHUNK           = signature %d8 chunk path sequence offset
+    CHUNK           = signature %d5 chunk path sequence offset
     chunk           = chunk                 ; This chunk is part of the file at 'path'
     path            = string                ; Path of file that the 'chunk' belongs to 
     sequence        = number-8              ; Defines which chunk of the file at 'path' this is!
@@ -55,13 +39,9 @@ The following ABNF grammar defines the the API which is used to comminicate with
 
     ;  Sends an abort for one file at path.                                  
 
-    ABORT           = signature %d9 receiver path
+    ABORT           = signature %d6 receiver path
     receiver        = string                ; UUID that identifies the receiver
     path            = string                ; 
-
-    ;  Terminate all worker threads.                                         
-
-    TERMINATE       = signature %d10
 
     ; A list of string values
     strings         = strings-count *strings-value

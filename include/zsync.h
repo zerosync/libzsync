@@ -28,6 +28,10 @@ LIBZSYNC_EXPORT zsync_t *
 LIBZSYNC_EXPORT void
     zsync_destroy (zsync_t **self_p);
 
+//  Sets the name of this node. This is required before starting the node.
+LIBZSYNC_EXPORT void
+    zsync_set_name (zsync_t *self, const char *format, ...);
+
 //  Start the zsync node
 LIBZSYNC_EXPORT int
     zsync_start (zsync_t *self);

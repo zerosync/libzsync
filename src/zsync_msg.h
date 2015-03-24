@@ -27,30 +27,20 @@
 
 /*  These are the zsync_msg messages:
 
-    REQ_STATE - Requests the current state.
-
-    RES_STATE - Responds to REQ_STATE with current state.
-        state               number 8    
-
-    REQ_UPDATE - Requests an update for all changes with a newer state then 'state'.
-        state               number 8    
+    HELLO - Greet a new peer with it's known state.
+        state               number 8    State of the peer we're greeting
 
     UPDATE - Sends a list of updated files to the client.
         sender              string      UUID that identifies the sender
         update_msg          msg         List of updated files and their metadata
 
-    REQ_FILES - Requests a list of files from receiver.
+    FILES - Requests a list of files from receiver.
         receiver            string      UUID that identifies the receiver
         files               strings     List of file names
         size                number 8    Total size of all files in bytes
 
-    REQ_CHUNK - Requests a chunk of 'chunk_size' data from 'path' at 'offset'.
-        path                string      Path of file that the 'chunk' belongs to 
-        chunk_size          number 8    Size of the requested chunk in bytes
-        offset              number 8    File offset for for the chunk in bytes
-
-    RES_CHUNK - Responds with the requested chunk.
-        chunk               chunk       Requested chunk
+    CREDIT - Sends a credit amount for requested files.
+        amount              number 8    Credit amount in bytes
 
     CHUNK - Sends one 'chunk' of data of a file at the 'path'.
         chunk               chunk       This chunk is part of the file at 'path'
@@ -61,21 +51,15 @@
     ABORT - Sends an abort for one file at path.
         receiver            string      UUID that identifies the receiver
         path                string      
-
-    TERMINATE - Terminate all worker threads.
 */
 
 
-#define ZSYNC_MSG_REQ_STATE                 1
-#define ZSYNC_MSG_RES_STATE                 2
-#define ZSYNC_MSG_REQ_UPDATE                3
-#define ZSYNC_MSG_UPDATE                    4
-#define ZSYNC_MSG_REQ_FILES                 5
-#define ZSYNC_MSG_REQ_CHUNK                 6
-#define ZSYNC_MSG_RES_CHUNK                 7
-#define ZSYNC_MSG_CHUNK                     8
-#define ZSYNC_MSG_ABORT                     9
-#define ZSYNC_MSG_TERMINATE                 10
+#define ZSYNC_MSG_HELLO                     1
+#define ZSYNC_MSG_UPDATE                    2
+#define ZSYNC_MSG_FILES                     3
+#define ZSYNC_MSG_CREDIT                    4
+#define ZSYNC_MSG_CHUNK                     5
+#define ZSYNC_MSG_ABORT                     6
 
 #include <czmq.h>
 
@@ -169,23 +153,11 @@ LIBZSYNC_EXPORT uint64_t
 LIBZSYNC_EXPORT void
     zsync_msg_set_size (zsync_msg_t *self, uint64_t size);
 
-//  Get/set the path field
-LIBZSYNC_EXPORT const char *
-    zsync_msg_path (zsync_msg_t *self);
-LIBZSYNC_EXPORT void
-    zsync_msg_set_path (zsync_msg_t *self, const char *value);
-
-//  Get/set the chunk_size field
+//  Get/set the amount field
 LIBZSYNC_EXPORT uint64_t
-    zsync_msg_chunk_size (zsync_msg_t *self);
+    zsync_msg_amount (zsync_msg_t *self);
 LIBZSYNC_EXPORT void
-    zsync_msg_set_chunk_size (zsync_msg_t *self, uint64_t chunk_size);
-
-//  Get/set the offset field
-LIBZSYNC_EXPORT uint64_t
-    zsync_msg_offset (zsync_msg_t *self);
-LIBZSYNC_EXPORT void
-    zsync_msg_set_offset (zsync_msg_t *self, uint64_t offset);
+    zsync_msg_set_amount (zsync_msg_t *self, uint64_t amount);
 
 //  Get a copy of the chunk field
 LIBZSYNC_EXPORT zchunk_t *
@@ -197,11 +169,23 @@ LIBZSYNC_EXPORT zchunk_t *
 LIBZSYNC_EXPORT void
     zsync_msg_set_chunk (zsync_msg_t *self, zchunk_t **chunk_p);
 
+//  Get/set the path field
+LIBZSYNC_EXPORT const char *
+    zsync_msg_path (zsync_msg_t *self);
+LIBZSYNC_EXPORT void
+    zsync_msg_set_path (zsync_msg_t *self, const char *value);
+
 //  Get/set the sequence field
 LIBZSYNC_EXPORT uint64_t
     zsync_msg_sequence (zsync_msg_t *self);
 LIBZSYNC_EXPORT void
     zsync_msg_set_sequence (zsync_msg_t *self, uint64_t sequence);
+
+//  Get/set the offset field
+LIBZSYNC_EXPORT uint64_t
+    zsync_msg_offset (zsync_msg_t *self);
+LIBZSYNC_EXPORT void
+    zsync_msg_set_offset (zsync_msg_t *self, uint64_t offset);
 
 //  Self test of this class
 LIBZSYNC_EXPORT int
