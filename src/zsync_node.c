@@ -88,7 +88,7 @@ zsync_node_destroy (zsync_node_t **self_p)
 //  Start node, return 0 if OK, 1 if not possible
 
 static int
-zyre_node_start (zsync_node_t *self)
+zsync_node_start (zsync_node_t *self)
 {
     //  Load known peers
     zconfig_t *config = zconfig_load (zsys_sprintf ("%s.cfg", self->name));
@@ -105,13 +105,28 @@ zyre_node_start (zsync_node_t *self)
         }
     }
 
+    //  Setup and start inbox
+    zstr_sendm (self->inbox, "START");
+    zstr_send (self->inbox, self->name);
+    int rc = zsock_wait (self->inbox);
+    assert (rc == 0);
+
+    //  Setup and start outbox
+    zstr_sendm (self->outbox, "START");
+    zstr_send (self->outbox, self->name);
+    rc = zsock_wait (self->outbox);
+    assert (rc == 0);
+    
     //  Setup and start zyre
     zyre_set_header (self->zyre, "ZS-NAME", "%s", self->name);
-    int rc = zyre_start (self->zyre);
+    rc = zyre_start (self->zyre);
     assert (rc == 0);
     zyre_join (self->zyre, "ZSYNC");
-    
+
+    //  Start polling on sockets
     zpoller_add (self->poller, zyre_socket (self->zyre));
+    zpoller_add (self->poller, self->inbox);
+    zpoller_add (self->poller, self->outbox);
     return 0;
 }
 
@@ -119,12 +134,29 @@ zyre_node_start (zsync_node_t *self)
 //  Stop node, retrun 0 if OK, 1 if not possible
 
 static int
-zyre_node_stop (zsync_node_t *self)
-{
+zsync_node_stop (zsync_node_t *self)
+{   
+    int rc = 0;
+    //  Stop zyre
     zyre_leave (self->zyre, "ZSYNC");
     zyre_stop (self->zyre);
-    //  Stop polling on zyre socket
+    
+    //  Stop inbox
+    zstr_sendm (self->inbox, "STOP");
+    zstr_send (self->inbox, self->name);
+    rc = zsock_wait (self->inbox);
+    assert (rc == 0);
+    
+    //  Stop outbox
+    zstr_sendm (self->outbox, "STOP");
+    zstr_send (self->outbox, self->name);
+    rc = zsock_wait (self->outbox);
+    assert (rc == 0);
+
+    //  Stop polling on sockets
     zpoller_remove (self->poller, zyre_socket (self->zyre));
+    zpoller_remove (self->poller, self->inbox);
+    zpoller_remove (self->poller, self->outbox);
 
     //  Save the current state of known peers
     zconfig_t *config = zconfig_new ("peers", NULL);
@@ -185,14 +217,16 @@ zsync_find_peer_by_zyre_id (zsync_node_t *self, char *zyre_id)
 //  Here we handle the different control messages from the front-end
 
 static void
-zsync_node_recv_api (zsync_node_t *self)
+zsync_node_recv_api (zsync_node_t *self, zsock_t *socket)
 {
     //  Get the whole message of the pipe in one go
-    zmsg_t *request = zmsg_recv (self->pipe);
+    zmsg_t *request = zmsg_recv (socket);
     if (!request)
        return;        //  Interrupted
 
     char *command = zmsg_popstr (request);
+    if (streq (command, "NAME"))
+       zstr_send ("%s", self->name);
     if (streq (command, "SET NAME")) {
        free (self->name);
        self->name = zmsg_popstr (request);
@@ -201,10 +235,10 @@ zsync_node_recv_api (zsync_node_t *self)
     }
     else
     if (streq (command, "START"))
-        zsock_signal (self->pipe, zyre_node_start (self));
+        zsock_signal (self->pipe, zsync_node_start (self));
     else
     if (streq (command, "STOP"))
-        zsock_signal (self->pipe, zyre_node_stop (self));
+        zsock_signal (self->pipe, zsync_node_stop (self));
     else
     if (streq (command, "PEERS"))
         zsock_send (self->pipe, "p", self->peers);
@@ -288,8 +322,14 @@ zsync_node_actor (zsock_t *pipe, void *args)
 
     while (!self->terminated) {
         zsock_t *which = (zsock_t *) zpoller_wait (self->poller, 0);
-        if (which == self->pipe)
-            zsync_node_recv_api (self);
+        if (which == self->pipe) 
+            zsync_node_recv_api (self, self->pipe);
+        else
+        if (which == zactor_sock (self->inbox)) 
+            zsync_node_recv_api (self, zactor_sock (self->inbox));
+        else
+        if (which == zactor_sock (self->outbox))
+            zsync_node_recv_api (self, zactor_sock (self->outbox));
         else
         if (which == zyre_socket (self->zyre))
            zsync_node_recv_peer (self);

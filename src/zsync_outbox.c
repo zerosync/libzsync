@@ -44,11 +44,15 @@ zsync_outbox_new (zsock_t *pipe, void *args)
     assert (self);
 
     self->pipe = pipe;
-    self->signal = zsock_new_pub ("inproc://outbox_events");
-    self->slot = zsock_new_sub ("inproc://outbox_events", "");
+
+    self->signal = zsock_new (ZMQ_PUB);
+    self->slot = zsock_new (ZMQ_SUB);
+    assert (self->signal);
+    assert (self->slot);
+
     self->zyre = (zyre_t *) args;
 
-    self->poller = zpoller_new (self->pipe, self->slot, NULL);
+    self->poller = zpoller_new (self->pipe, NULL);
 
     self->terminated = false;
 
@@ -76,6 +80,43 @@ zsync_outbox_destroy (zsync_outbox_t **self_p)
 }
 
 
+//  Start this actor
+
+static int
+zsync_outbox_start (zsync_outbox_t *self, char *node_name)
+{
+    assert (self);
+    int rc = 0;
+    //  Setup signal and slot sockets
+    rc = zsock_bind (self->signal, "inproc://outbox_%s_events", node_name);
+    assert (rc == 0);
+    rc = zsock_connect (self->slot, "inproc://inbox_%s_events", node_name);
+    //  Subscribe to signal without filtering
+    zsock_set_subscribe (self->slot, "");
+    assert (rc == 0);
+
+    zpoller_add (self->poller, self->slot);
+    return 0;
+}
+
+
+//  Stop this actor
+
+static int
+zsync_outbox_stop (zsync_outbox_t *self, char *node_name)
+{
+    assert (self);
+    int rc = 0;
+    rc = zsock_unbind (self->signal, "inproc://outbox_%s_events", node_name);
+    assert (rc == 0);
+    rc = zsock_disconnect (self->slot, "inproc://inbox_%s_events", node_name);
+    assert (rc == 0);
+
+    zpoller_remove (self->poller, self->slot);
+    return 0;
+}
+
+
 //  Here we handle incomming message from the node
 
 static void
@@ -87,6 +128,16 @@ zsync_outbox_recv_node (zsync_outbox_t *self)
        return;        //  Interrupted
 
     char *command = zmsg_popstr (request);
+    if (streq (command, "START")) {
+        char *node_name = zmsg_popstr (request);
+        zsock_signal (self->pipe, zsync_outbox_start (self, node_name));
+    }
+    else
+    if (streq (command, "STOP")) {
+        char *node_name = zmsg_popstr (request);
+        zsock_signal (self->pipe, zsync_outbox_stop (self, node_name));
+    }
+    else
     if (streq (command, "$TERM"))
        self->terminated = true;
     else {
@@ -106,6 +157,7 @@ zsync_outbox_recv_signal (zsync_outbox_t *self)
     if (!signal)
        return;        //  Interrupted
 
+    zsys_info ("%s", zmsg_popstr (signal));
     //  TODO
 }
 
