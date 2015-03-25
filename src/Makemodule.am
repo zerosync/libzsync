@@ -24,6 +24,8 @@ src_liblibzsync_la_SOURCES = \
     src/zsync.c \
     src/zsync_node.c \
     src/zsync_peer.c \
+    src/zsync_inbox.c \
+    src/zsync_outbox.c \
     src/platform.h
 
 src_liblibzsync_la_CPPFLAGS = ${AM_CPPFLAGS}

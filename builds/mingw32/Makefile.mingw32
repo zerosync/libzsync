@@ -10,7 +10,7 @@ INCDIR=-I$(PREFIX)/include -I.
 LIBDIR=-L$(PREFIX)/lib
 CFLAGS=-Wall -Os -g -DLIBLIBZSYNC_EXPORTS $(INCDIR)
 
-OBJS = zsync.o zsync_node.o zsync_peer.o
+OBJS = zsync.o zsync_node.o zsync_peer.o zsync_inbox.o zsync_outbox.o
 %.o: ../../src/%.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 

@@ -25,6 +25,8 @@
 
 struct _zsync_node_t {
     zsock_t *pipe;             //  Pipe back to application
+    zactor_t *inbox;           //  Actor for incomming traffic
+    zactor_t *outbox;          //  Actor for outgoing traffic
     zyre_t *zyre;              //  Zyre instance for P2P communication
     zpoller_t *poller;
 
@@ -46,8 +48,11 @@ zsync_node_new (zsock_t *pipe, void *args)
     assert (self);
 
     //  Initialize class properties
-    self->zyre = zyre_new ("test");
     self->pipe = pipe;
+    self->inbox = zactor_new (zsync_inbox_actor, self->zyre);
+    self->outbox = zactor_new (zsync_outbox_actor, self->zyre);
+    self->zyre = zyre_new ("test");
+
     self->poller = zpoller_new (self->pipe, NULL);
     self->peers = zlist_new ();
 
@@ -68,6 +73,8 @@ zsync_node_destroy (zsync_node_t **self_p)
         zsync_node_t *self = *self_p;
 
         //  Free class properties
+        zactor_destroy (&self->inbox);
+        zactor_destroy (&self->outbox);
         zyre_destroy (&self->zyre);
         zlist_destroy (&self->peers);
 
@@ -255,6 +262,7 @@ zsync_node_recv_peer (zsync_node_t *self)
        zmsg_t *zsmsg = zyre_event_msg (msg);
        char *news = zmsg_popstr (zsmsg);
        zsys_debug ("[%s]-->[%s] WHISPER: %s", zsync_peer_name (peer), self->name, news);
+       zstr_send (self->inbox, "FILES");
     }
     else
     if (zyre_event_type (msg) == ZYRE_EVENT_SHOUT) {

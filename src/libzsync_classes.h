@@ -24,5 +24,7 @@
 //  Internal API
 #include "zsync_node.h"
 #include "zsync_peer.h"
+#include "zsync_inbox.h"
+#include "zsync_outbox.h"
 
 #endif
