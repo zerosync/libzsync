@@ -10,7 +10,7 @@
     for commits are:
 
      * The XML model used for this code generation: zsync_msg.xml, or
-     * The code generation script that built this file: zproto_codec_c
+     * The code generation script that built this file: zproto_codec_c_v1
     ************************************************************************
     Copyright (c) the Contributors as noted in the AUTHORS file.         
     This file is part of libzsync, the peer to peer file sharing library:
@@ -39,28 +39,17 @@ struct _zsync_msg_t {
     int id;                             //  zsync_msg message ID
     byte *needle;                       //  Read/write pointer for serialization
     byte *ceiling;                      //  Valid upper limit for read pointer
-    /* State of the peer we're greeting  */
-    uint64_t state;
-    /* UUID that identifies the sender  */
-    char sender [256];
-    /* List of updated files and their metadata  */
-    zmsg_t *update_msg;
-    /* UUID that identifies the receiver  */
-    char receiver [256];
-    /* List of file names  */
-    zlist_t *files;
-    /* Total size of all files in bytes  */
-    uint64_t size;
-    /* Credit amount in bytes  */
-    uint64_t amount;
-    /* This chunk is part of the file at 'path'  */
-    zchunk_t *chunk;
-    /* Path of file that the 'chunk' belongs to   */
-    char path [256];
-    /* Defines which chunk of the file at 'path' this is!  */
-    uint64_t sequence;
-    /* Offset for this 'chunk' in bytes  */
-    uint64_t offset;
+    uint64_t state;                     //  State of the peer we're greeting
+    char *sender;                       //  UUID that identifies the sender
+    zmsg_t *update_msg;                 //  List of updated files and their metadata
+    char *receiver;                     //  UUID that identifies the receiver
+    zlist_t *files;                     //  List of file names
+    uint64_t size;                      //  Total size of all files in bytes
+    uint64_t amount;                    //  Credit amount in bytes
+    zchunk_t *chunk;                    //  This chunk is part of the file at 'path'
+    char *path;                         //  Path of file that the 'chunk' belongs to 
+    uint64_t sequence;                  //  Defines which chunk of the file at 'path' this is!
+    uint64_t offset;                    //  Offset for this 'chunk' in bytes
 };
 
 //  --------------------------------------------------------------------------
@@ -74,10 +63,8 @@ struct _zsync_msg_t {
 
 //  Get a block of octets from the frame
 #define GET_OCTETS(host,size) { \
-    if (self->needle + size > self->ceiling) { \
-        zsys_warning ("zsync_msg: GET_OCTETS failed"); \
+    if (self->needle + size > self->ceiling) \
         goto malformed; \
-    } \
     memcpy ((host), self->needle, size); \
     self->needle += size; \
 }
@@ -119,20 +106,16 @@ struct _zsync_msg_t {
 
 //  Get a 1-byte number from the frame
 #define GET_NUMBER1(host) { \
-    if (self->needle + 1 > self->ceiling) { \
-        zsys_warning ("zsync_msg: GET_NUMBER1 failed"); \
+    if (self->needle + 1 > self->ceiling) \
         goto malformed; \
-    } \
     (host) = *(byte *) self->needle; \
     self->needle++; \
 }
 
 //  Get a 2-byte number from the frame
 #define GET_NUMBER2(host) { \
-    if (self->needle + 2 > self->ceiling) { \
-        zsys_warning ("zsync_msg: GET_NUMBER2 failed"); \
+    if (self->needle + 2 > self->ceiling) \
         goto malformed; \
-    } \
     (host) = ((uint16_t) (self->needle [0]) << 8) \
            +  (uint16_t) (self->needle [1]); \
     self->needle += 2; \
@@ -140,10 +123,8 @@ struct _zsync_msg_t {
 
 //  Get a 4-byte number from the frame
 #define GET_NUMBER4(host) { \
-    if (self->needle + 4 > self->ceiling) { \
-        zsys_warning ("zsync_msg: GET_NUMBER4 failed"); \
+    if (self->needle + 4 > self->ceiling) \
         goto malformed; \
-    } \
     (host) = ((uint32_t) (self->needle [0]) << 24) \
            + ((uint32_t) (self->needle [1]) << 16) \
            + ((uint32_t) (self->needle [2]) << 8) \
@@ -153,10 +134,8 @@ struct _zsync_msg_t {
 
 //  Get a 8-byte number from the frame
 #define GET_NUMBER8(host) { \
-    if (self->needle + 8 > self->ceiling) { \
-        zsys_warning ("zsync_msg: GET_NUMBER8 failed"); \
+    if (self->needle + 8 > self->ceiling) \
         goto malformed; \
-    } \
     (host) = ((uint64_t) (self->needle [0]) << 56) \
            + ((uint64_t) (self->needle [1]) << 48) \
            + ((uint64_t) (self->needle [2]) << 40) \
@@ -180,10 +159,9 @@ struct _zsync_msg_t {
 #define GET_STRING(host) { \
     size_t string_size; \
     GET_NUMBER1 (string_size); \
-    if (self->needle + string_size > (self->ceiling)) { \
-        zsys_warning ("zsync_msg: GET_STRING failed"); \
+    if (self->needle + string_size > (self->ceiling)) \
         goto malformed; \
-    } \
+    (host) = (char *) malloc (string_size + 1); \
     memcpy ((host), self->needle, string_size); \
     (host) [string_size] = 0; \
     self->needle += string_size; \
@@ -201,11 +179,8 @@ struct _zsync_msg_t {
 #define GET_LONGSTR(host) { \
     size_t string_size; \
     GET_NUMBER4 (string_size); \
-    if (self->needle + string_size > (self->ceiling)) { \
-        zsys_warning ("zsync_msg: GET_LONGSTR failed"); \
+    if (self->needle + string_size > (self->ceiling)) \
         goto malformed; \
-    } \
-    free ((host)); \
     (host) = (char *) malloc (string_size + 1); \
     memcpy ((host), self->needle, string_size); \
     (host) [string_size] = 0; \
@@ -217,9 +192,10 @@ struct _zsync_msg_t {
 //  Create a new zsync_msg
 
 zsync_msg_t *
-zsync_msg_new (void)
+zsync_msg_new (int id)
 {
     zsync_msg_t *self = (zsync_msg_t *) zmalloc (sizeof (zsync_msg_t));
+    self->id = id;
     return self;
 }
 
@@ -236,10 +212,13 @@ zsync_msg_destroy (zsync_msg_t **self_p)
 
         //  Free class properties
         zframe_destroy (&self->routing_id);
+        free (self->sender);
         zmsg_destroy (&self->update_msg);
+        free (self->receiver);
         if (self->files)
             zlist_destroy (&self->files);
         zchunk_destroy (&self->chunk);
+        free (self->path);
 
         //  Free object itself
         free (self);
@@ -247,43 +226,74 @@ zsync_msg_destroy (zsync_msg_t **self_p)
     }
 }
 
-
-//  --------------------------------------------------------------------------
-//  Receive a zsync_msg from the socket. Returns 0 if OK, -1 if
-//  there was an error. Blocks if there is no message waiting.
-
-int
-zsync_msg_recv (zsync_msg_t *self, zsock_t *input)
+//  Parse a zmsg_t and decides whether it is zsync_msg. Returns
+//  true if it is, false otherwise. Doesn't destroy or modify the
+//  original message.
+bool
+is_zsync_msg (zmsg_t *msg)
 {
-    assert (input);
-    
-    if (zsock_type (input) == ZMQ_ROUTER) {
-        zframe_destroy (&self->routing_id);
-        self->routing_id = zframe_recv (input);
-        if (!self->routing_id || !zsock_rcvmore (input)) {
-            zsys_warning ("zsync_msg: no routing ID");
-            return -1;          //  Interrupted or malformed
-        }
-    }
-    zmq_msg_t frame;
-    zmq_msg_init (&frame);
-    int size = zmq_msg_recv (&frame, zsock_resolve (input), 0);
-    if (size == -1) {
-        zsys_warning ("zsync_msg: interrupted");
-        goto malformed;         //  Interrupted
-    }
+    if (msg == NULL)
+        return false;
+
+    zframe_t *frame = zmsg_first (msg);
+
     //  Get and check protocol signature
-    self->needle = (byte *) zmq_msg_data (&frame);
-    self->ceiling = self->needle + zmq_msg_size (&frame);
-    
+    zsync_msg_t *self = zsync_msg_new (0);
+    self->needle = zframe_data (frame);
+    self->ceiling = self->needle + zframe_size (frame);
     uint16_t signature;
     GET_NUMBER2 (signature);
-    if (signature != (0xAAA0 | 0)) {
-        zsys_warning ("zsync_msg: invalid signature");
-        //  TODO: discard invalid messages and loop, and return
-        //  -1 only on interrupt
-        goto malformed;         //  Interrupted
+    if (signature != (0xAAA0 | 0))
+        goto fail;             //  Invalid signature
+
+    //  Get message id and parse per message type
+    GET_NUMBER1 (self->id);
+
+    switch (self->id) {
+        case ZSYNC_MSG_HELLO:
+        case ZSYNC_MSG_UPDATE:
+        case ZSYNC_MSG_FILES:
+        case ZSYNC_MSG_CREDIT:
+        case ZSYNC_MSG_CHUNK:
+        case ZSYNC_MSG_ABORT:
+            zsync_msg_destroy (&self);
+            return true;
+        default:
+            goto fail;
     }
+    fail:
+    malformed:
+        zsync_msg_destroy (&self);
+        return false;
+}
+
+//  --------------------------------------------------------------------------
+//  Parse a zsync_msg from zmsg_t. Returns a new object, or NULL if
+//  the message could not be parsed, or was NULL. Destroys msg and 
+//  nullifies the msg reference.
+
+zsync_msg_t *
+zsync_msg_decode (zmsg_t **msg_p)
+{
+    assert (msg_p);
+    zmsg_t *msg = *msg_p;
+    if (msg == NULL)
+        return NULL;
+        
+    zsync_msg_t *self = zsync_msg_new (0);
+    //  Read and parse command in frame
+    zframe_t *frame = zmsg_pop (msg);
+    if (!frame) 
+        goto empty;             //  Malformed or empty
+
+    //  Get and check protocol signature
+    self->needle = zframe_data (frame);
+    self->ceiling = self->needle + zframe_size (frame);
+    uint16_t signature;
+    GET_NUMBER2 (signature);
+    if (signature != (0xAAA0 | 0))
+        goto empty;             //  Invalid signature
+
     //  Get message id and parse per message type
     GET_NUMBER1 (self->id);
 
@@ -294,12 +304,11 @@ zsync_msg_recv (zsync_msg_t *self, zsock_t *input)
 
         case ZSYNC_MSG_UPDATE:
             GET_STRING (self->sender);
-            //  Get zero or more remaining frames
-            zmsg_destroy (&self->update_msg);
-            if (zsock_rcvmore (input))
-                self->update_msg = zmsg_recv (input);
-            else
-                self->update_msg = zmsg_new ();
+            //  Get zero or more remaining frames, leaving current
+            //  frame untouched
+            self->update_msg = zmsg_new ();
+            while (zmsg_size (msg))
+                zmsg_add (self->update_msg, zmsg_pop (msg));
             break;
 
         case ZSYNC_MSG_FILES:
@@ -310,7 +319,7 @@ zsync_msg_recv (zsync_msg_t *self, zsock_t *input)
                 self->files = zlist_new ();
                 zlist_autofree (self->files);
                 while (list_size--) {
-                    char *string = NULL;
+                    char *string;
                     GET_LONGSTR (string);
                     zlist_append (self->files, string);
                     free (string);
@@ -327,11 +336,8 @@ zsync_msg_recv (zsync_msg_t *self, zsock_t *input)
             {
                 size_t chunk_size;
                 GET_NUMBER4 (chunk_size);
-                if (self->needle + chunk_size > (self->ceiling)) {
-                    zsys_warning ("zsync_msg: chunk is missing data");
+                if (self->needle + chunk_size > (self->ceiling))
                     goto malformed;
-                }
-                zchunk_destroy (&self->chunk);
                 self->chunk = zchunk_new (self->needle, chunk_size);
                 self->needle += chunk_size;
             }
@@ -346,92 +352,131 @@ zsync_msg_recv (zsync_msg_t *self, zsock_t *input)
             break;
 
         default:
-            zsys_warning ("zsync_msg: bad message ID");
             goto malformed;
     }
     //  Successful return
-    zmq_msg_close (&frame);
-    return 0;
+    zframe_destroy (&frame);
+    zmsg_destroy (msg_p);
+    return self;
 
     //  Error returns
     malformed:
-        zsys_warning ("zsync_msg: zsync_msg malformed message, fail");
-        zmq_msg_close (&frame);
-        return -1;              //  Invalid message
+        zsys_error ("malformed message '%d'\n", self->id);
+    empty:
+        zframe_destroy (&frame);
+        zmsg_destroy (msg_p);
+        zsync_msg_destroy (&self);
+        return (NULL);
 }
 
 
 //  --------------------------------------------------------------------------
-//  Send the zsync_msg to the socket. Does not destroy it. Returns 0 if
-//  OK, else -1.
+//  Encode zsync_msg into zmsg and destroy it. Returns a newly created
+//  object or NULL if error. Use when not in control of sending the message.
 
-int
-zsync_msg_send (zsync_msg_t *self, zsock_t *output)
+zmsg_t *
+zsync_msg_encode (zsync_msg_t **self_p)
 {
-    assert (self);
-    assert (output);
-
-    if (zsock_type (output) == ZMQ_ROUTER)
-        zframe_send (&self->routing_id, output, ZFRAME_MORE + ZFRAME_REUSE);
+    assert (self_p);
+    assert (*self_p);
+    
+    zsync_msg_t *self = *self_p;
+    zmsg_t *msg = zmsg_new ();
 
     size_t frame_size = 2 + 1;          //  Signature and message ID
     switch (self->id) {
         case ZSYNC_MSG_HELLO:
-            frame_size += 8;            //  state
+            //  state is a 8-byte integer
+            frame_size += 8;
             break;
+            
         case ZSYNC_MSG_UPDATE:
-            frame_size += 1 + strlen (self->sender);
+            //  sender is a string with 1-byte length
+            frame_size++;       //  Size is one octet
+            if (self->sender)
+                frame_size += strlen (self->sender);
             break;
+            
         case ZSYNC_MSG_FILES:
-            frame_size += 1 + strlen (self->receiver);
-            frame_size += 4;            //  Size is 4 octets
+            //  receiver is a string with 1-byte length
+            frame_size++;       //  Size is one octet
+            if (self->receiver)
+                frame_size += strlen (self->receiver);
+            //  files is an array of strings
+            frame_size += 4;    //  Size is 4 octets
             if (self->files) {
+                //  Add up size of list contents
                 char *files = (char *) zlist_first (self->files);
                 while (files) {
                     frame_size += 4 + strlen (files);
                     files = (char *) zlist_next (self->files);
                 }
             }
-            frame_size += 8;            //  size
+            //  size is a 8-byte integer
+            frame_size += 8;
             break;
+            
         case ZSYNC_MSG_CREDIT:
-            frame_size += 8;            //  amount
+            //  amount is a 8-byte integer
+            frame_size += 8;
             break;
+            
         case ZSYNC_MSG_CHUNK:
-            frame_size += 4;            //  Size is 4 octets
+            //  chunk is a chunk with 4-byte length
+            frame_size += 4;
             if (self->chunk)
                 frame_size += zchunk_size (self->chunk);
-            frame_size += 1 + strlen (self->path);
-            frame_size += 8;            //  sequence
-            frame_size += 8;            //  offset
+            //  path is a string with 1-byte length
+            frame_size++;       //  Size is one octet
+            if (self->path)
+                frame_size += strlen (self->path);
+            //  sequence is a 8-byte integer
+            frame_size += 8;
+            //  offset is a 8-byte integer
+            frame_size += 8;
             break;
+            
         case ZSYNC_MSG_ABORT:
-            frame_size += 1 + strlen (self->receiver);
-            frame_size += 1 + strlen (self->path);
+            //  receiver is a string with 1-byte length
+            frame_size++;       //  Size is one octet
+            if (self->receiver)
+                frame_size += strlen (self->receiver);
+            //  path is a string with 1-byte length
+            frame_size++;       //  Size is one octet
+            if (self->path)
+                frame_size += strlen (self->path);
             break;
+            
+        default:
+            zsys_error ("bad message type '%d', not sent\n", self->id);
+            //  No recovery, this is a fatal application error
+            assert (false);
     }
     //  Now serialize message into the frame
-    zmq_msg_t frame;
-    zmq_msg_init_size (&frame, frame_size);
-    self->needle = (byte *) zmq_msg_data (&frame);
+    zframe_t *frame = zframe_new (NULL, frame_size);
+    self->needle = zframe_data (frame);
     PUT_NUMBER2 (0xAAA0 | 0);
     PUT_NUMBER1 (self->id);
-    bool send_update_msg = false;
-    size_t nbr_frames = 1;              //  Total number of frames to send
-    
+
     switch (self->id) {
         case ZSYNC_MSG_HELLO:
             PUT_NUMBER8 (self->state);
             break;
 
         case ZSYNC_MSG_UPDATE:
-            PUT_STRING (self->sender);
-            nbr_frames += self->update_msg? zmsg_size (self->update_msg): 1;
-            send_update_msg = true;
+            if (self->sender) {
+                PUT_STRING (self->sender);
+            }
+            else
+                PUT_NUMBER1 (0);    //  Empty string
             break;
 
         case ZSYNC_MSG_FILES:
-            PUT_STRING (self->receiver);
+            if (self->receiver) {
+                PUT_STRING (self->receiver);
+            }
+            else
+                PUT_NUMBER1 (0);    //  Empty string
             if (self->files) {
                 PUT_NUMBER4 (zlist_size (self->files));
                 char *files = (char *) zlist_first (self->files);
@@ -459,33 +504,399 @@ zsync_msg_send (zsync_msg_t *self, zsock_t *output)
             }
             else
                 PUT_NUMBER4 (0);    //  Empty chunk
-            PUT_STRING (self->path);
+            if (self->path) {
+                PUT_STRING (self->path);
+            }
+            else
+                PUT_NUMBER1 (0);    //  Empty string
             PUT_NUMBER8 (self->sequence);
             PUT_NUMBER8 (self->offset);
             break;
 
         case ZSYNC_MSG_ABORT:
-            PUT_STRING (self->receiver);
-            PUT_STRING (self->path);
+            if (self->receiver) {
+                PUT_STRING (self->receiver);
+            }
+            else
+                PUT_NUMBER1 (0);    //  Empty string
+            if (self->path) {
+                PUT_STRING (self->path);
+            }
+            else
+                PUT_NUMBER1 (0);    //  Empty string
             break;
 
     }
     //  Now send the data frame
-    zmq_msg_send (&frame, zsock_resolve (output), --nbr_frames? ZMQ_SNDMORE: 0);
-    
-    //  Now send the update_msg if necessary
-    if (send_update_msg) {
+    if (zmsg_append (msg, &frame)) {
+        zmsg_destroy (&msg);
+        zsync_msg_destroy (self_p);
+        return NULL;
+    }
+    //  Now send the message field if there is any
+    if (self->id == ZSYNC_MSG_UPDATE) {
         if (self->update_msg) {
-            zframe_t *frame = zmsg_first (self->update_msg);
+            zframe_t *frame = zmsg_pop (self->update_msg);
             while (frame) {
-                zframe_send (&frame, output, ZFRAME_REUSE + (--nbr_frames? ZFRAME_MORE: 0));
-                frame = zmsg_next (self->update_msg);
+                zmsg_append (msg, &frame);
+                frame = zmsg_pop (self->update_msg);
             }
         }
-        else
-            zmq_send (zsock_resolve (output), NULL, 0, 0);
+        else {
+            zframe_t *frame = zframe_new (NULL, 0);
+            zmsg_append (msg, &frame);
+        }
     }
-    return 0;
+    //  Destroy zsync_msg object
+    zsync_msg_destroy (self_p);
+    return msg;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Receive and parse a zsync_msg from the socket. Returns new object or
+//  NULL if error. Will block if there's no message waiting.
+
+zsync_msg_t *
+zsync_msg_recv (void *input)
+{
+    assert (input);
+    zmsg_t *msg = zmsg_recv (input);
+    if (!msg)
+        return NULL;            //  Interrupted
+
+    //  If message came from a router socket, first frame is routing_id
+    zframe_t *routing_id = NULL;
+    if (zsock_type (zsock_resolve (input)) == ZMQ_ROUTER) {
+        routing_id = zmsg_pop (msg);
+        //  If message was not valid, forget about it
+        if (!routing_id || !zmsg_next (msg))
+            return NULL;        //  Malformed or empty
+    }
+    zsync_msg_t *zsync_msg = zsync_msg_decode (&msg);
+    if (zsync_msg && zsock_type (zsock_resolve (input)) == ZMQ_ROUTER)
+        zsync_msg->routing_id = routing_id;
+
+    return zsync_msg;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Receive and parse a zsync_msg from the socket. Returns new object,
+//  or NULL either if there was no input waiting, or the recv was interrupted.
+
+zsync_msg_t *
+zsync_msg_recv_nowait (void *input)
+{
+    assert (input);
+    zmsg_t *msg = zmsg_recv_nowait (input);
+    if (!msg)
+        return NULL;            //  Interrupted
+    //  If message came from a router socket, first frame is routing_id
+    zframe_t *routing_id = NULL;
+    if (zsock_type (zsock_resolve (input)) == ZMQ_ROUTER) {
+        routing_id = zmsg_pop (msg);
+        //  If message was not valid, forget about it
+        if (!routing_id || !zmsg_next (msg))
+            return NULL;        //  Malformed or empty
+    }
+    zsync_msg_t *zsync_msg = zsync_msg_decode (&msg);
+    if (zsync_msg && zsock_type (zsock_resolve (input)) == ZMQ_ROUTER)
+        zsync_msg->routing_id = routing_id;
+
+    return zsync_msg;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the zsync_msg to the socket, and destroy it
+//  Returns 0 if OK, else -1
+
+int
+zsync_msg_send (zsync_msg_t **self_p, void *output)
+{
+    assert (self_p);
+    assert (*self_p);
+    assert (output);
+
+    //  Save routing_id if any, as encode will destroy it
+    zsync_msg_t *self = *self_p;
+    zframe_t *routing_id = self->routing_id;
+    self->routing_id = NULL;
+
+    //  Encode zsync_msg message to a single zmsg
+    zmsg_t *msg = zsync_msg_encode (self_p);
+    
+    //  If we're sending to a ROUTER, send the routing_id first
+    if (zsock_type (zsock_resolve (output)) == ZMQ_ROUTER) {
+        assert (routing_id);
+        zmsg_prepend (msg, &routing_id);
+    }
+    else
+        zframe_destroy (&routing_id);
+        
+    if (msg && zmsg_send (&msg, output) == 0)
+        return 0;
+    else
+        return -1;              //  Failed to encode, or send
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the zsync_msg to the output, and do not destroy it
+
+int
+zsync_msg_send_again (zsync_msg_t *self, void *output)
+{
+    assert (self);
+    assert (output);
+    self = zsync_msg_dup (self);
+    return zsync_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode HELLO message
+
+zmsg_t * 
+zsync_msg_encode_hello (
+    uint64_t state)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_HELLO);
+    zsync_msg_set_state (self, state);
+    return zsync_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode UPDATE message
+
+zmsg_t * 
+zsync_msg_encode_update (
+    const char *sender,
+    zmsg_t *update_msg)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_UPDATE);
+    zsync_msg_set_sender (self, "%s", sender);
+    zmsg_t *update_msg_copy = zmsg_dup (update_msg);
+    zsync_msg_set_update_msg (self, &update_msg_copy);
+    return zsync_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode FILES message
+
+zmsg_t * 
+zsync_msg_encode_files (
+    const char *receiver,
+    zlist_t *files,
+    uint64_t size)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_FILES);
+    zsync_msg_set_receiver (self, "%s", receiver);
+    zlist_t *files_copy = zlist_dup (files);
+    zsync_msg_set_files (self, &files_copy);
+    zsync_msg_set_size (self, size);
+    return zsync_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode CREDIT message
+
+zmsg_t * 
+zsync_msg_encode_credit (
+    uint64_t amount)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_CREDIT);
+    zsync_msg_set_amount (self, amount);
+    return zsync_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode CHUNK message
+
+zmsg_t * 
+zsync_msg_encode_chunk (
+    zchunk_t *chunk,
+    const char *path,
+    uint64_t sequence,
+    uint64_t offset)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_CHUNK);
+    zchunk_t *chunk_copy = zchunk_dup (chunk);
+    zsync_msg_set_chunk (self, &chunk_copy);
+    zsync_msg_set_path (self, "%s", path);
+    zsync_msg_set_sequence (self, sequence);
+    zsync_msg_set_offset (self, offset);
+    return zsync_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Encode ABORT message
+
+zmsg_t * 
+zsync_msg_encode_abort (
+    const char *receiver,
+    const char *path)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_ABORT);
+    zsync_msg_set_receiver (self, "%s", receiver);
+    zsync_msg_set_path (self, "%s", path);
+    return zsync_msg_encode (&self);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the HELLO to the socket in one step
+
+int
+zsync_msg_send_hello (
+    void *output,
+    uint64_t state)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_HELLO);
+    zsync_msg_set_state (self, state);
+    return zsync_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the UPDATE to the socket in one step
+
+int
+zsync_msg_send_update (
+    void *output,
+    const char *sender,
+    zmsg_t *update_msg)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_UPDATE);
+    zsync_msg_set_sender (self, sender);
+    zmsg_t *update_msg_copy = zmsg_dup (update_msg);
+    zsync_msg_set_update_msg (self, &update_msg_copy);
+    return zsync_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the FILES to the socket in one step
+
+int
+zsync_msg_send_files (
+    void *output,
+    const char *receiver,
+    zlist_t *files,
+    uint64_t size)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_FILES);
+    zsync_msg_set_receiver (self, receiver);
+    zlist_t *files_copy = zlist_dup (files);
+    zsync_msg_set_files (self, &files_copy);
+    zsync_msg_set_size (self, size);
+    return zsync_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the CREDIT to the socket in one step
+
+int
+zsync_msg_send_credit (
+    void *output,
+    uint64_t amount)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_CREDIT);
+    zsync_msg_set_amount (self, amount);
+    return zsync_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the CHUNK to the socket in one step
+
+int
+zsync_msg_send_chunk (
+    void *output,
+    zchunk_t *chunk,
+    const char *path,
+    uint64_t sequence,
+    uint64_t offset)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_CHUNK);
+    zchunk_t *chunk_copy = zchunk_dup (chunk);
+    zsync_msg_set_chunk (self, &chunk_copy);
+    zsync_msg_set_path (self, path);
+    zsync_msg_set_sequence (self, sequence);
+    zsync_msg_set_offset (self, offset);
+    return zsync_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Send the ABORT to the socket in one step
+
+int
+zsync_msg_send_abort (
+    void *output,
+    const char *receiver,
+    const char *path)
+{
+    zsync_msg_t *self = zsync_msg_new (ZSYNC_MSG_ABORT);
+    zsync_msg_set_receiver (self, receiver);
+    zsync_msg_set_path (self, path);
+    return zsync_msg_send (&self, output);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Duplicate the zsync_msg message
+
+zsync_msg_t *
+zsync_msg_dup (zsync_msg_t *self)
+{
+    if (!self)
+        return NULL;
+        
+    zsync_msg_t *copy = zsync_msg_new (self->id);
+    if (self->routing_id)
+        copy->routing_id = zframe_dup (self->routing_id);
+    switch (self->id) {
+        case ZSYNC_MSG_HELLO:
+            copy->state = self->state;
+            break;
+
+        case ZSYNC_MSG_UPDATE:
+            copy->sender = self->sender? strdup (self->sender): NULL;
+            copy->update_msg = self->update_msg? zmsg_dup (self->update_msg): NULL;
+            break;
+
+        case ZSYNC_MSG_FILES:
+            copy->receiver = self->receiver? strdup (self->receiver): NULL;
+            copy->files = self->files? zlist_dup (self->files): NULL;
+            copy->size = self->size;
+            break;
+
+        case ZSYNC_MSG_CREDIT:
+            copy->amount = self->amount;
+            break;
+
+        case ZSYNC_MSG_CHUNK:
+            copy->chunk = self->chunk? zchunk_dup (self->chunk): NULL;
+            copy->path = self->path? strdup (self->path): NULL;
+            copy->sequence = self->sequence;
+            copy->offset = self->offset;
+            break;
+
+        case ZSYNC_MSG_ABORT:
+            copy->receiver = self->receiver? strdup (self->receiver): NULL;
+            copy->path = self->path? strdup (self->path): NULL;
+            break;
+
+    }
+    return copy;
 }
 
 
@@ -658,14 +1069,15 @@ zsync_msg_sender (zsync_msg_t *self)
 }
 
 void
-zsync_msg_set_sender (zsync_msg_t *self, const char *value)
+zsync_msg_set_sender (zsync_msg_t *self, const char *format, ...)
 {
+    //  Format sender from provided arguments
     assert (self);
-    assert (value);
-    if (value == self->sender)
-        return;
-    strncpy (self->sender, value, 255);
-    self->sender [255] = 0;
+    va_list argptr;
+    va_start (argptr, format);
+    free (self->sender);
+    self->sender = zsys_vprintf (format, argptr);
+    va_end (argptr);
 }
 
 
@@ -713,14 +1125,15 @@ zsync_msg_receiver (zsync_msg_t *self)
 }
 
 void
-zsync_msg_set_receiver (zsync_msg_t *self, const char *value)
+zsync_msg_set_receiver (zsync_msg_t *self, const char *format, ...)
 {
+    //  Format receiver from provided arguments
     assert (self);
-    assert (value);
-    if (value == self->receiver)
-        return;
-    strncpy (self->receiver, value, 255);
-    self->receiver [255] = 0;
+    va_list argptr;
+    va_start (argptr, format);
+    free (self->receiver);
+    self->receiver = zsys_vprintf (format, argptr);
+    va_end (argptr);
 }
 
 
@@ -757,6 +1170,53 @@ zsync_msg_set_files (zsync_msg_t *self, zlist_t **files_p)
     *files_p = NULL;
 }
 
+//  --------------------------------------------------------------------------
+//  Iterate through the files field, and append a files value
+
+const char *
+zsync_msg_files_first (zsync_msg_t *self)
+{
+    assert (self);
+    if (self->files)
+        return (char *) (zlist_first (self->files));
+    else
+        return NULL;
+}
+
+const char *
+zsync_msg_files_next (zsync_msg_t *self)
+{
+    assert (self);
+    if (self->files)
+        return (char *) (zlist_next (self->files));
+    else
+        return NULL;
+}
+
+void
+zsync_msg_files_append (zsync_msg_t *self, const char *format, ...)
+{
+    //  Format into newly allocated string
+    assert (self);
+    va_list argptr;
+    va_start (argptr, format);
+    char *string = zsys_vprintf (format, argptr);
+    va_end (argptr);
+
+    //  Attach string to list
+    if (!self->files) {
+        self->files = zlist_new ();
+        zlist_autofree (self->files);
+    }
+    zlist_append (self->files, string);
+    free (string);
+}
+
+size_t
+zsync_msg_files_size (zsync_msg_t *self)
+{
+    return zlist_size (self->files);
+}
 
 
 //  --------------------------------------------------------------------------
@@ -839,14 +1299,15 @@ zsync_msg_path (zsync_msg_t *self)
 }
 
 void
-zsync_msg_set_path (zsync_msg_t *self, const char *value)
+zsync_msg_set_path (zsync_msg_t *self, const char *format, ...)
 {
+    //  Format path from provided arguments
     assert (self);
-    assert (value);
-    if (value == self->path)
-        return;
-    strncpy (self->path, value, 255);
-    self->path [255] = 0;
+    va_list argptr;
+    va_start (argptr, format);
+    free (self->path);
+    self->path = zsys_vprintf (format, argptr);
+    va_end (argptr);
 }
 
 
@@ -900,7 +1361,7 @@ zsync_msg_test (bool verbose)
 
     //  @selftest
     //  Simple create/destroy test
-    zsync_msg_t *self = zsync_msg_new ();
+    zsync_msg_t *self = zsync_msg_new (0);
     assert (self);
     zsync_msg_destroy (&self);
 
@@ -915,105 +1376,148 @@ zsync_msg_test (bool verbose)
 
     //  Encode/send/decode and verify each message type
     int instance;
-    self = zsync_msg_new ();
-    zsync_msg_set_id (self, ZSYNC_MSG_HELLO);
+    zsync_msg_t *copy;
+    self = zsync_msg_new (ZSYNC_MSG_HELLO);
+    
+    //  Check that _dup works on empty message
+    copy = zsync_msg_dup (self);
+    assert (copy);
+    zsync_msg_destroy (&copy);
 
     zsync_msg_set_state (self, 123);
-    //  Send twice
-    zsync_msg_send (self, output);
-    zsync_msg_send (self, output);
+    //  Send twice from same object
+    zsync_msg_send_again (self, output);
+    zsync_msg_send (&self, output);
 
     for (instance = 0; instance < 2; instance++) {
-        zsync_msg_recv (self, input);
+        self = zsync_msg_recv (input);
+        assert (self);
         assert (zsync_msg_routing_id (self));
+        
         assert (zsync_msg_state (self) == 123);
+        zsync_msg_destroy (&self);
     }
-    zsync_msg_set_id (self, ZSYNC_MSG_UPDATE);
+    self = zsync_msg_new (ZSYNC_MSG_UPDATE);
+    
+    //  Check that _dup works on empty message
+    copy = zsync_msg_dup (self);
+    assert (copy);
+    zsync_msg_destroy (&copy);
 
     zsync_msg_set_sender (self, "Life is short but Now lasts for ever");
     zmsg_t *update_update_msg = zmsg_new ();
     zsync_msg_set_update_msg (self, &update_update_msg);
     zmsg_addstr (zsync_msg_update_msg (self), "Hello, World");
-    //  Send twice
-    zsync_msg_send (self, output);
-    zsync_msg_send (self, output);
+    //  Send twice from same object
+    zsync_msg_send_again (self, output);
+    zsync_msg_send (&self, output);
 
     for (instance = 0; instance < 2; instance++) {
-        zsync_msg_recv (self, input);
+        self = zsync_msg_recv (input);
+        assert (self);
         assert (zsync_msg_routing_id (self));
+        
         assert (streq (zsync_msg_sender (self), "Life is short but Now lasts for ever"));
         assert (zmsg_size (zsync_msg_update_msg (self)) == 1);
+        zsync_msg_destroy (&self);
     }
-    zsync_msg_set_id (self, ZSYNC_MSG_FILES);
+    self = zsync_msg_new (ZSYNC_MSG_FILES);
+    
+    //  Check that _dup works on empty message
+    copy = zsync_msg_dup (self);
+    assert (copy);
+    zsync_msg_destroy (&copy);
 
     zsync_msg_set_receiver (self, "Life is short but Now lasts for ever");
-    zlist_t *files_files = zlist_new ();
-    zlist_append (files_files, "Name: Brutus");
-    zlist_append (files_files, "Age: 43");
-    zsync_msg_set_files (self, &files_files);
+    zsync_msg_files_append (self, "Name: %s", "Brutus");
+    zsync_msg_files_append (self, "Age: %d", 43);
     zsync_msg_set_size (self, 123);
-    //  Send twice
-    zsync_msg_send (self, output);
-    zsync_msg_send (self, output);
+    //  Send twice from same object
+    zsync_msg_send_again (self, output);
+    zsync_msg_send (&self, output);
 
     for (instance = 0; instance < 2; instance++) {
-        zsync_msg_recv (self, input);
+        self = zsync_msg_recv (input);
+        assert (self);
         assert (zsync_msg_routing_id (self));
+        
         assert (streq (zsync_msg_receiver (self), "Life is short but Now lasts for ever"));
-        zlist_t *files = zsync_msg_get_files (self);
-        assert (zlist_size (files) == 2);
-        assert (streq ((char *) zlist_first (files), "Name: Brutus"));
-        assert (streq ((char *) zlist_next (files), "Age: 43"));
-        zlist_destroy (&files);
+        assert (zsync_msg_files_size (self) == 2);
+        assert (streq (zsync_msg_files_first (self), "Name: Brutus"));
+        assert (streq (zsync_msg_files_next (self), "Age: 43"));
         assert (zsync_msg_size (self) == 123);
+        zsync_msg_destroy (&self);
     }
-    zsync_msg_set_id (self, ZSYNC_MSG_CREDIT);
+    self = zsync_msg_new (ZSYNC_MSG_CREDIT);
+    
+    //  Check that _dup works on empty message
+    copy = zsync_msg_dup (self);
+    assert (copy);
+    zsync_msg_destroy (&copy);
 
     zsync_msg_set_amount (self, 123);
-    //  Send twice
-    zsync_msg_send (self, output);
-    zsync_msg_send (self, output);
+    //  Send twice from same object
+    zsync_msg_send_again (self, output);
+    zsync_msg_send (&self, output);
 
     for (instance = 0; instance < 2; instance++) {
-        zsync_msg_recv (self, input);
+        self = zsync_msg_recv (input);
+        assert (self);
         assert (zsync_msg_routing_id (self));
+        
         assert (zsync_msg_amount (self) == 123);
+        zsync_msg_destroy (&self);
     }
-    zsync_msg_set_id (self, ZSYNC_MSG_CHUNK);
+    self = zsync_msg_new (ZSYNC_MSG_CHUNK);
+    
+    //  Check that _dup works on empty message
+    copy = zsync_msg_dup (self);
+    assert (copy);
+    zsync_msg_destroy (&copy);
 
     zchunk_t *chunk_chunk = zchunk_new ("Captcha Diem", 12);
     zsync_msg_set_chunk (self, &chunk_chunk);
     zsync_msg_set_path (self, "Life is short but Now lasts for ever");
     zsync_msg_set_sequence (self, 123);
     zsync_msg_set_offset (self, 123);
-    //  Send twice
-    zsync_msg_send (self, output);
-    zsync_msg_send (self, output);
+    //  Send twice from same object
+    zsync_msg_send_again (self, output);
+    zsync_msg_send (&self, output);
 
     for (instance = 0; instance < 2; instance++) {
-        zsync_msg_recv (self, input);
+        self = zsync_msg_recv (input);
+        assert (self);
         assert (zsync_msg_routing_id (self));
+        
         assert (memcmp (zchunk_data (zsync_msg_chunk (self)), "Captcha Diem", 12) == 0);
         assert (streq (zsync_msg_path (self), "Life is short but Now lasts for ever"));
         assert (zsync_msg_sequence (self) == 123);
         assert (zsync_msg_offset (self) == 123);
+        zsync_msg_destroy (&self);
     }
-    zsync_msg_set_id (self, ZSYNC_MSG_ABORT);
+    self = zsync_msg_new (ZSYNC_MSG_ABORT);
+    
+    //  Check that _dup works on empty message
+    copy = zsync_msg_dup (self);
+    assert (copy);
+    zsync_msg_destroy (&copy);
 
     zsync_msg_set_receiver (self, "Life is short but Now lasts for ever");
     zsync_msg_set_path (self, "Life is short but Now lasts for ever");
-    //  Send twice
-    zsync_msg_send (self, output);
-    zsync_msg_send (self, output);
+    //  Send twice from same object
+    zsync_msg_send_again (self, output);
+    zsync_msg_send (&self, output);
 
     for (instance = 0; instance < 2; instance++) {
-        zsync_msg_recv (self, input);
+        self = zsync_msg_recv (input);
+        assert (self);
         assert (zsync_msg_routing_id (self));
+        
         assert (streq (zsync_msg_receiver (self), "Life is short but Now lasts for ever"));
         assert (streq (zsync_msg_path (self), "Life is short but Now lasts for ever"));
+        zsync_msg_destroy (&self);
     }
 
-    zsync_msg_destroy (&self);
     zsock_destroy (&input);
     zsock_destroy (&output);
     //  @end

@@ -27,4 +27,6 @@
 #include "zsync_inbox.h"
 #include "zsync_outbox.h"
 
+#include "zsync_msg.h"
+
 #endif

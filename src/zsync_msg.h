@@ -10,7 +10,7 @@
     for commits are:
 
      * The XML model used for this code generation: zsync_msg.xml, or
-     * The code generation script that built this file: zproto_codec_c
+     * The code generation script that built this file: zproto_codec_c_v1
     ************************************************************************
     Copyright (c) the Contributors as noted in the AUTHORS file.         
     This file is part of libzsync, the peer to peer file sharing library:
@@ -63,6 +63,7 @@
 
 #include <czmq.h>
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -74,23 +75,134 @@ typedef struct _zsync_msg_t zsync_msg_t;
 #endif
 
 //  @interface
-//  Create a new empty zsync_msg
+//  Create a new zsync_msg
 LIBZSYNC_EXPORT zsync_msg_t *
-    zsync_msg_new (void);
+    zsync_msg_new (int id);
 
-//  Destroy a zsync_msg instance
+//  Destroy the zsync_msg
 LIBZSYNC_EXPORT void
     zsync_msg_destroy (zsync_msg_t **self_p);
 
-//  Receive a zsync_msg from the socket. Returns 0 if OK, -1 if
-//  there was an error. Blocks if there is no message waiting.
-LIBZSYNC_EXPORT int
-    zsync_msg_recv (zsync_msg_t *self, zsock_t *input);
+//  Parse a zmsg_t and decides whether it is zsync_msg. Returns
+//  true if it is, false otherwise. Doesn't destroy or modify the
+//  original message.
+LIBZSYNC_EXPORT bool
+    is_zsync_msg (zmsg_t *msg_p);
 
-//  Send the zsync_msg to the output socket, does not destroy it
+//  Parse a zsync_msg from zmsg_t. Returns a new object, or NULL if
+//  the message could not be parsed, or was NULL. Destroys msg and 
+//  nullifies the msg reference.
+LIBZSYNC_EXPORT zsync_msg_t *
+    zsync_msg_decode (zmsg_t **msg_p);
+
+//  Encode zsync_msg into zmsg and destroy it. Returns a newly created
+//  object or NULL if error. Use when not in control of sending the message.
+LIBZSYNC_EXPORT zmsg_t *
+    zsync_msg_encode (zsync_msg_t **self_p);
+
+//  Receive and parse a zsync_msg from the socket. Returns new object, 
+//  or NULL if error. Will block if there's no message waiting.
+LIBZSYNC_EXPORT zsync_msg_t *
+    zsync_msg_recv (void *input);
+
+//  Receive and parse a zsync_msg from the socket. Returns new object, 
+//  or NULL either if there was no input waiting, or the recv was interrupted.
+LIBZSYNC_EXPORT zsync_msg_t *
+    zsync_msg_recv_nowait (void *input);
+
+//  Send the zsync_msg to the output, and destroy it
 LIBZSYNC_EXPORT int
-    zsync_msg_send (zsync_msg_t *self, zsock_t *output);
+    zsync_msg_send (zsync_msg_t **self_p, void *output);
+
+//  Send the zsync_msg to the output, and do not destroy it
+LIBZSYNC_EXPORT int
+    zsync_msg_send_again (zsync_msg_t *self, void *output);
+
+//  Encode the HELLO 
+LIBZSYNC_EXPORT zmsg_t *
+    zsync_msg_encode_hello (
+        uint64_t state);
+
+//  Encode the UPDATE 
+LIBZSYNC_EXPORT zmsg_t *
+    zsync_msg_encode_update (
+        const char *sender,
+        zmsg_t *update_msg);
+
+//  Encode the FILES 
+LIBZSYNC_EXPORT zmsg_t *
+    zsync_msg_encode_files (
+        const char *receiver,
+        zlist_t *files,
+        uint64_t size);
+
+//  Encode the CREDIT 
+LIBZSYNC_EXPORT zmsg_t *
+    zsync_msg_encode_credit (
+        uint64_t amount);
+
+//  Encode the CHUNK 
+LIBZSYNC_EXPORT zmsg_t *
+    zsync_msg_encode_chunk (
+        zchunk_t *chunk,
+        const char *path,
+        uint64_t sequence,
+        uint64_t offset);
+
+//  Encode the ABORT 
+LIBZSYNC_EXPORT zmsg_t *
+    zsync_msg_encode_abort (
+        const char *receiver,
+        const char *path);
+
+
+//  Send the HELLO to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+LIBZSYNC_EXPORT int
+    zsync_msg_send_hello (void *output,
+        uint64_t state);
     
+//  Send the UPDATE to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+LIBZSYNC_EXPORT int
+    zsync_msg_send_update (void *output,
+        const char *sender,
+        zmsg_t *update_msg);
+    
+//  Send the FILES to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+LIBZSYNC_EXPORT int
+    zsync_msg_send_files (void *output,
+        const char *receiver,
+        zlist_t *files,
+        uint64_t size);
+    
+//  Send the CREDIT to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+LIBZSYNC_EXPORT int
+    zsync_msg_send_credit (void *output,
+        uint64_t amount);
+    
+//  Send the CHUNK to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+LIBZSYNC_EXPORT int
+    zsync_msg_send_chunk (void *output,
+        zchunk_t *chunk,
+        const char *path,
+        uint64_t sequence,
+        uint64_t offset);
+    
+//  Send the ABORT to the output in one step
+//  WARNING, this call will fail if output is of type ZMQ_ROUTER.
+LIBZSYNC_EXPORT int
+    zsync_msg_send_abort (void *output,
+        const char *receiver,
+        const char *path);
+    
+//  Duplicate the zsync_msg message
+LIBZSYNC_EXPORT zsync_msg_t *
+    zsync_msg_dup (zsync_msg_t *self);
+
 //  Print contents of message to stdout
 LIBZSYNC_EXPORT void
     zsync_msg_print (zsync_msg_t *self);
@@ -119,7 +231,7 @@ LIBZSYNC_EXPORT void
 LIBZSYNC_EXPORT const char *
     zsync_msg_sender (zsync_msg_t *self);
 LIBZSYNC_EXPORT void
-    zsync_msg_set_sender (zsync_msg_t *self, const char *value);
+    zsync_msg_set_sender (zsync_msg_t *self, const char *format, ...);
 
 //  Get a copy of the update_msg field
 LIBZSYNC_EXPORT zmsg_t *
@@ -135,7 +247,7 @@ LIBZSYNC_EXPORT void
 LIBZSYNC_EXPORT const char *
     zsync_msg_receiver (zsync_msg_t *self);
 LIBZSYNC_EXPORT void
-    zsync_msg_set_receiver (zsync_msg_t *self, const char *value);
+    zsync_msg_set_receiver (zsync_msg_t *self, const char *format, ...);
 
 //  Get/set the files field
 LIBZSYNC_EXPORT zlist_t *
@@ -146,6 +258,16 @@ LIBZSYNC_EXPORT zlist_t *
 //  Set the files field, transferring ownership from caller
 LIBZSYNC_EXPORT void
     zsync_msg_set_files (zsync_msg_t *self, zlist_t **files_p);
+
+//  Iterate through the files field, and append a files value
+LIBZSYNC_EXPORT const char *
+    zsync_msg_files_first (zsync_msg_t *self);
+LIBZSYNC_EXPORT const char *
+    zsync_msg_files_next (zsync_msg_t *self);
+LIBZSYNC_EXPORT void
+    zsync_msg_files_append (zsync_msg_t *self, const char *format, ...);
+LIBZSYNC_EXPORT size_t
+    zsync_msg_files_size (zsync_msg_t *self);
 
 //  Get/set the size field
 LIBZSYNC_EXPORT uint64_t
@@ -173,7 +295,7 @@ LIBZSYNC_EXPORT void
 LIBZSYNC_EXPORT const char *
     zsync_msg_path (zsync_msg_t *self);
 LIBZSYNC_EXPORT void
-    zsync_msg_set_path (zsync_msg_t *self, const char *value);
+    zsync_msg_set_path (zsync_msg_t *self, const char *format, ...);
 
 //  Get/set the sequence field
 LIBZSYNC_EXPORT uint64_t

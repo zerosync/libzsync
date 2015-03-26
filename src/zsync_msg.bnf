@@ -33,7 +33,7 @@ The following ABNF grammar defines the the API which is used to comminicate with
 
     CHUNK           = signature %d5 chunk path sequence offset
     chunk           = chunk                 ; This chunk is part of the file at 'path'
-    path            = string                ; Path of file that the 'chunk' belongs to 
+    path            = string                ; Path of file that the 'chunk' belongs to
     sequence        = number-8              ; Defines which chunk of the file at 'path' this is!
     offset          = number-8              ; Offset for this 'chunk' in bytes
 

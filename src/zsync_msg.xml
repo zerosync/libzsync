@@ -2,7 +2,7 @@
 <class 
     name = "zsync_msg" 
     title = "the API which is used to comminicate with user interface clients"
-    script = "zproto_codec_c"
+    script = "zproto_codec_c_v1"
     package_dir = "."
     project_header = "../include/libzsync.h"
     export_macro = "LIBZSYNC_EXPORT"

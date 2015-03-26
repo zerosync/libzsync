@@ -22,7 +22,7 @@ extern "C" {
 //  @interface
 //  Create a new zsync
 LIBZSYNC_EXPORT zsync_t *
-    zsync_new ();
+    zsync_new (char *name);
 
 //  Destroy the zsync
 LIBZSYNC_EXPORT void

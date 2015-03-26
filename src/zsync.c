@@ -32,13 +32,13 @@ struct _zsync_t {
 //  Create a new zsync
 
 zsync_t *
-zsync_new ()
+zsync_new (char *name)
 {
     zsync_t *self = (zsync_t *) zmalloc (sizeof (zsync_t));
     assert (self);
 
     //  Start node engine and wait for it to be ready
-    self->actor = zactor_new (zsync_node_actor, NULL);
+    self->actor = zactor_new (zsync_node_actor, zsys_sprintf (name));
     assert (self->actor);
 
     return self;
@@ -66,7 +66,7 @@ zsync_destroy (zsync_t **self_p)
 
 
 //  --------------------------------------------------------------------------
-//  Sets the name of this node. This is required before starting the node.
+//  Sets the name of this node.
 
 void
 zsync_set_name (zsync_t *self, const char *format, ...)
@@ -125,27 +125,23 @@ zsync_test (bool verbose)
 
     //  @selftest
     //  Simple create/destroy test
-    zsync_t *self1 = zsync_new ();
-    zsync_t *self2 = zsync_new ();
-    zsync_t *self3 = zsync_new ();
+    zsync_t *self1 = zsync_new ("node1");
+    zsync_t *self2 = zsync_new ("node2");
+    zsync_t *self3 = zsync_new ("node3");
     assert (self1);
     assert (self2);
     assert (self3);
 
-    zsync_set_name (self1, "%s", "node1");
-    zsync_set_name (self2, "%s", "node2");
-    zsync_set_name (self3, "%s", "node3");
-    
     zsync_start (self1);
     zsync_start (self2);
-    zsync_start (self3);
-    zclock_sleep (2000);
+//    zsync_start (self3);
+    zclock_sleep (1500);
     
     zsync_stop (self1);
     zclock_sleep (200);
     zsync_stop (self2);
     zclock_sleep (200);
-    zsync_stop (self3);
+//    zsync_stop (self3);
     
     zsync_destroy (&self1);
     zsync_destroy (&self2);
