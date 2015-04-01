@@ -27,6 +27,7 @@ struct _zsync_node_t {
     zsock_t *pipe;             //  Pipe back to application
     zactor_t *inbox;           //  Actor for incomming traffic
     zactor_t *outbox;          //  Actor for outgoing traffic
+    zactor_t *watcher;
     zyre_t *zyre;              //  Zyre instance for P2P communication
     zpoller_t *poller;
 
@@ -55,6 +56,7 @@ zsync_node_new (zsock_t *pipe, void *args)
     self->pipe = pipe;
     self->inbox = zactor_new (zsync_inbox_actor, self->zyre);
     self->outbox = zactor_new (zsync_outbox_actor, self->zyre);
+    self->watcher = zactor_new (zsync_watcher_actor, NULL);
 
     self->zyre = zyre_new (self->name);
     self->poller = zpoller_new (self->pipe, NULL);
@@ -79,6 +81,7 @@ zsync_node_destroy (zsync_node_t **self_p)
         //  Free class properties
         zactor_destroy (&self->inbox);
         zactor_destroy (&self->outbox);
+        zactor_destroy (&self->watcher);
 
         zyre_destroy (&self->zyre);
         zpoller_destroy (&self->poller);
@@ -132,6 +135,12 @@ zsync_node_start (zsync_node_t *self)
     rc = zsock_wait (self->outbox);
     assert (rc == 0);
     
+    //  Setup and start watcher
+    zstr_sendm (self->watcher, "START");
+    zstr_send (self->watcher, self->name);
+    rc = zsock_wait (self->watcher);
+    assert (rc == 0);
+    
     //  Setup and start zyre
     rc = zyre_start (self->zyre);
     assert (rc == 0);
@@ -141,6 +150,7 @@ zsync_node_start (zsync_node_t *self)
     zpoller_add (self->poller, zyre_socket (self->zyre));
     zpoller_add (self->poller, self->inbox);
     zpoller_add (self->poller, self->outbox);
+    zpoller_add (self->poller, self->watcher);
     return 0;
 }
 
@@ -167,10 +177,17 @@ zsync_node_stop (zsync_node_t *self)
     rc = zsock_wait (self->outbox);
     assert (rc == 0);
 
+    //  Stop watcher
+    zstr_sendm (self->watcher, "STOP");
+    zstr_send (self->watcher, self->name);
+    rc = zsock_wait (self->watcher);
+    assert (rc == 0);
+
     //  Stop polling on sockets
     zpoller_remove (self->poller, zyre_socket (self->zyre));
     zpoller_remove (self->poller, self->inbox);
     zpoller_remove (self->poller, self->outbox);
+    zpoller_remove (self->poller, self->watcher);
 
     zconfig_t *config = zconfig_new ("root", NULL);
     //  Save the peers current state
@@ -391,6 +408,8 @@ zsync_node_actor (zsock_t *pipe, void *args)
         if (which == zactor_sock (self->outbox))
             zsync_node_recv_api (self, zactor_sock (self->outbox));
         else
+        if (which == zactor_sock (self->watcher))
+            zsync_node_recv_api (self, zactor_sock (self->watcher));
         if (which == zyre_socket (self->zyre))
            zsync_node_recv_peer (self);
     }

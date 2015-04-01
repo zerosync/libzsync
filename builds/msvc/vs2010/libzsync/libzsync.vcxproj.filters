@@ -10,6 +10,9 @@
     <ClCompile Include="..\..\..\..\src\zsync.c">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\..\src\zsync_file.c">
+      <Filter>src</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\..\src\zsync_node.c">
       <Filter>src</Filter>
     </ClCompile>
@@ -20,6 +23,12 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\..\src\zsync_outbox.c">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\src\zsync_msg.c">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\src\zsync_watcher.c">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

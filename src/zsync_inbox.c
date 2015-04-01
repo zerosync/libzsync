@@ -142,6 +142,7 @@ zsync_inbox_recv_node (zsync_inbox_t *self)
        zsys_debug ("New directive for files");
     else
     if (streq (command, "$TERM"))
+       //  The $TERM command is send by zactor_destroy() method
        self->terminated = true;
     else {
        zsys_error ("invalid command '%s'", command);
@@ -198,8 +199,20 @@ zsync_inbox_test (bool verbose)
 {
     printf (" * zsync_inbox: ");
 
+    int rc = 0;
     //  @selftest
     //  Simple create/destroy test
+    zactor_t *inbox = zactor_new (zsync_inbox_actor, NULL);
+    
+    zstr_send (inbox, "START");
+    rc = zsock_wait (inbox);             //  Wait until actor started
+    assert (rc == 0);
+
+    zstr_send (inbox, "STOP");
+    rc = zsock_wait (inbox);             //  Wait until actor stopped
+    assert (rc == 0);
+    
+    zactor_destroy (&inbox);
     //  @end
 
     printf ("OK\n");

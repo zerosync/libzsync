@@ -33,10 +33,13 @@ main (int argc, char *argv [])
     printf ("Running libzsync selftests...\n");
 
     zsync_test (verbose); 
+    zsync_file_test (verbose); 
     zsync_node_test (verbose); 
     zsync_peer_test (verbose); 
     zsync_inbox_test (verbose); 
     zsync_outbox_test (verbose); 
+    zsync_msg_test (verbose); 
+    zsync_watcher_test (verbose); 
 
     printf ("Tests passed OK\n");
     return 0;

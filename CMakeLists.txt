@@ -104,10 +104,13 @@ set (libzsync_headers
     include/libzsync_library.h
     include/libzsync.h
     include/zsync.h
+    src/zsync_file.h
     src/zsync_node.h
     src/zsync_peer.h
     src/zsync_inbox.h
     src/zsync_outbox.h
+    src/zsync_msg.h
+    src/zsync_watcher.h
 )
 source_group ("Header Files" FILES ${libzsync_headers})
 install(FILES ${libzsync_headers} DESTINATION include)
@@ -118,10 +121,13 @@ install(FILES ${libzsync_headers} DESTINATION include)
 include_directories("${BINARY_DIR}" "${SOURCE_DIR}/include")
 set (libzsync_sources
     src/zsync.c
+    src/zsync_file.c
     src/zsync_node.c
     src/zsync_peer.c
     src/zsync_inbox.c
     src/zsync_outbox.c
+    src/zsync_msg.c
+    src/zsync_watcher.c
 )
 source_group ("Source Files" FILES ${libzsync_sources})
 if (NOT DEFINED BUILD_SHARED_LIBS)

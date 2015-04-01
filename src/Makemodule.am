@@ -22,11 +22,13 @@ include_HEADERS = \
 
 src_liblibzsync_la_SOURCES = \
     src/zsync.c \
+    src/zsync_file.c \
     src/zsync_node.c \
     src/zsync_peer.c \
     src/zsync_inbox.c \
     src/zsync_outbox.c \
     src/zsync_msg.c \
+    src/zsync_watcher.c \
     src/platform.h
 
 src_liblibzsync_la_CPPFLAGS = ${AM_CPPFLAGS}
@@ -53,7 +55,6 @@ check_PROGRAMS += src/libzsync_selftest
 src_libzsync_selftest_CPPFLAGS = ${src_liblibzsync_la_CPPFLAGS}
 src_libzsync_selftest_LDADD = ${program_libs}
 src_libzsync_selftest_SOURCES = src/libzsync_selftest.c
-TESTS += src/libzsync_selftest
 
 
 # define custom target for all products of /src
@@ -62,6 +63,12 @@ src: src/liblibzsync.la src/libzsync_selftest
 # Produce generated code from models in the src directory
 code:
 	cd $(srcdir)/src; gsl -q zsync_msg.xml
+
+check-local: src/libzsync_selftest
+	$(LIBTOOL) --mode=execute $(srcdir)/src/libzsync_selftest
+
+check-verbose: src/libzsync_selftest
+	$(LIBTOOL) --mode=execute $(srcdir)/src/libzsync_selftest -v
 
 # Run the selftest binary under valgrind to check for memory leaks
 memcheck: src/libzsync_selftest
