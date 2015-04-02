@@ -35,8 +35,8 @@ struct _zsync_file_t {
 
 //  Compares to files for equality.
 
-bool
-zsync_equals (void *item1, void *item2)
+int 
+zsync_compare (void *item1, void *item2)
 {
    assert (item1);
    assert (item2);
@@ -44,7 +44,7 @@ zsync_equals (void *item1, void *item2)
    zsync_file_t *file1 = (zsync_file_t *) item1;
    zsync_file_t *file2 = (zsync_file_t *) item2;
 
-   return streq (file1->path, file2->path);
+   return strcmp (file1->path, file2->path);
 }
 
 

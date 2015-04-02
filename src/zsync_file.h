@@ -26,8 +26,8 @@ extern "C" {
 typedef struct _zsync_file_t zsync_file_t;
 
 // @interface
-LIBZSYNC_EXPORT bool
-    zsync_equals (void *item1, void *item2);
+LIBZSYNC_EXPORT int
+    zsync_compare (void *item1, void *item2);
 
 // Constructor, creates new zs file meta data
 LIBZSYNC_EXPORT zsync_file_t *

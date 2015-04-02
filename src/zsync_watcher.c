@@ -62,7 +62,7 @@ zsync_watcher_new (zsock_t *pipe, void *args)
     self->watchlist = zhash_new ();
 
     self->index = zlist_new ();
-    zlist_equalsfn (self->index, zsync_equals);
+    zlist_comparefn (self->index, zsync_compare);
 
     return self;
 }
@@ -187,11 +187,11 @@ zsync_watcher_inotify_recv (zsync_watcher_t *self)
         char *ptr;
 
         zlist_t *updates = zlist_new ();
-        zlist_equalsfn (updates, zsync_equals);
+        zlist_comparefn (updates, zsync_compare);
         zlist_t *moves = zlist_new ();
-        zlist_equalsfn (moves, zsync_equals);
+        zlist_comparefn (moves, zsync_compare);
         zlist_t *deletes = zlist_new ();
-        zlist_equalsfn (deletes, zsync_equals);
+        zlist_comparefn (deletes, zsync_compare);
         /* Loop while events can be read from inotify file descriptor. */
         for (;;) {
 
@@ -288,40 +288,47 @@ zsync_watcher_inotify_recv (zsync_watcher_t *self)
                 if (event->mask & IN_UNMOUNT)       printf("IN_UNMOUNT ");
             }
 
-            zsync_file_t *file = (zsync_file_t *) zlist_first (updates);
-            while (file) {
-               zsys_info ("File %s updated", zsync_file_path (file));
-               if (!zlist_exists (self->index, file))
-                    zlist_append (self->index, file);
-               file  = (zsync_file_t *) zlist_next (updates);
-            }
-            zsync_file_t *filem = (zsync_file_t *) zlist_first (moves);
-            while (filem) {
-               zsys_info ("File %s moved", zsync_file_path (filem));
-               if (!zlist_exists (self->index, filem))
-                    zlist_append (self->index, filem);
-               filem  = (zsync_file_t *) zlist_next (moves);
-            }
-            zsync_file_t *filed = (zsync_file_t *) zlist_first (deletes);
-            while (filed) {
-               zsys_info ("File %s deleted", zsync_file_path (filed));
-               if (!zlist_exists (self->index, filed))
-                    zlist_append (self->index, filed);
-               filed  = (zsync_file_t *) zlist_next (deletes);
-            }
-            //  Print Index
-            zsync_file_t *filei = (zsync_file_t *) zlist_first (self->index);
-            zsys_info ("===============INDEX=================");
-            while (filei) {
-               zsys_info ("File %s (%d)", zsync_file_path (filei), zsync_file_operation (filei));
-               filei  = (zsync_file_t *) zlist_next (self->index);
-            }
-            zsys_info ("======================================");
-
-            zlist_destroy (&updates);
-            zlist_destroy (&moves);
-            zlist_destroy (&deletes);
+            
         }
+        
+        //  Print changes
+        zsync_file_t *file = (zsync_file_t *) zlist_first (updates);
+        while (file) {
+           zsys_info ("File %s updated", zsync_file_path (file));
+           if (!zlist_exists (self->index, file))
+                zlist_append (self->index, file);
+           file  = (zsync_file_t *) zlist_next (updates);
+        }
+        zsync_file_t *filem = (zsync_file_t *) zlist_first (moves);
+        while (filem) {
+           zsys_info ("File %s moved to %s", 
+                      zsync_file_path (filem),
+                      zsync_file_renamed_path (filem));
+           if (!zlist_exists (self->index, filem))
+                zlist_append (self->index, filem);
+           filem  = (zsync_file_t *) zlist_next (moves);
+        }
+        zsync_file_t *filed = (zsync_file_t *) zlist_first (deletes);
+        while (filed) {
+           zsys_info ("File %s deleted", zsync_file_path (filed));
+           if (!zlist_exists (self->index, filed))
+                zlist_append (self->index, filed);
+           filed  = (zsync_file_t *) zlist_next (deletes);
+        }
+
+        //  Cleanup
+        zlist_destroy (&updates);
+        zlist_destroy (&moves);
+        zlist_destroy (&deletes);
+
+        //  Print Index
+        zsync_file_t *filei = (zsync_file_t *) zlist_first (self->index);
+        zsys_info ("===============INDEX=================");
+        while (filei) {
+            zsys_info ("File %s (%d)", zsync_file_path (filei), zsync_file_operation (filei));
+            filei  = (zsync_file_t *) zlist_next (self->index);
+        }
+        zsys_info ("======================================");
     } 
 }
 
@@ -340,11 +347,13 @@ zsync_watcher_actor (zsock_t *pipe, void *args)
     zsock_signal (self->pipe, 0);
 
     while (!self->terminated) {
+       //  Check the filesystem for changes 
+       zsync_watcher_inotify_recv (self);
+       //  Poll the sockets and wait 100ms before proceeding
        zsock_t *which = (zsock_t *) zpoller_wait (self->poller, 100);
        if (which == self->pipe)
           zsync_watcher_recv_api (self);
        //  Add other sockets when you need them.
-       zsync_watcher_inotify_recv (self);
     }
 
     zsync_watcher_destroy (&self);
@@ -367,6 +376,13 @@ zsync_watcher_test (bool verbose)
     zstr_send (zsync_watcher, "START");
     rc = zsock_wait (zsync_watcher);               //  Wait until actor started
     assert (rc == 0);
+
+    zfile_t *testfile = zfile_new ("/home/ksapper/Workspace/zerosync/libzsync", "a");
+    zfile_output (testfile);
+    zfile_write (testfile, zchunk_new (NULL, 100), 0);
+    zfile_close (testfile);
+    //  TODO: assert
+    zfile_remove (testfile);
  
     zstr_send (zsync_watcher, "STOP");
     rc = zsock_wait (zsync_watcher);               //  Wait until actor stopped
