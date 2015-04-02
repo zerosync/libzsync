@@ -8,7 +8,7 @@ To use or contribute to zsync, build and install this stack:
 git clone git://github.com/jedisct1/libsodium.git
 git clone git://github.com/zeromq/libzmq.git
 git clone git://github.com/zeromq/czmq.git
-git clone git://github.com/malamute/malamute-core.git
+git clone git://github.com/zerosync/libzsync.git
 for project in libsodium libzmq czmq libzsync; do
     cd $project
     ./autogen.sh
